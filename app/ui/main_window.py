@@ -113,10 +113,10 @@ class MainWindow:
             QGraphicsView,
             QLabel,
             QLineEdit,
-            QListWidget,
             QMainWindow,
             QSplitter,
             QStackedWidget,
+            QTreeWidget,
             QVBoxLayout,
             QWidget,
         )
@@ -140,9 +140,22 @@ class MainWindow:
         if "실행취소" in self._rail_buttons:
             self._rail_buttons["실행취소"].setEnabled(False)
 
-        # ── 좌측: 검색 + 조직 목록 패널 ───────────────────────────────
-        self.org_list = QListWidget()
-        self.org_list.setAccessibleName("조직 목록")
+        # ── 좌측: 검색 + 조직 트리(아코디언) 패널 ─────────────────────
+        # 팀을 클릭하면 그 아래로 소속 팀원이 펼쳐지는 아코디언 트리.
+        self.org_tree = QTreeWidget()
+        self.org_tree.setAccessibleName("조직 트리")
+        self.org_tree.setHeaderHidden(True)
+        self.org_tree.setIndentation(14)
+        self.org_tree.setAnimated(True)
+        self.org_tree.setUniformRowHeights(True)
+        self.org_tree.setExpandsOnDoubleClick(False)
+        # 팀원 클릭 시 캔버스 포커스에 쓰는 employee_id → org_id / 이름 매핑.
+        self._employee_org: dict[str, str] = {}
+        self._employee_labels: dict[str, str] = {}
+        # 진행 중인 캔버스 포커스 팬 애니메이션·네온 글로우의 GC 방지 참조.
+        self._focus_anim = None
+        self._glow_effect = None
+        self._glow_anim = None
         self.search_input = QLineEdit()
         self.search_input.setObjectName("searchInput")
         self.search_input.setPlaceholderText("이름·조직·직책 검색")
@@ -205,7 +218,10 @@ class MainWindow:
 
         self.status = self._window.statusBar()
         self.status.showMessage("표준 템플릿(명단·위계) 또는 인사 파일을 가져오면 조직도가 자동 생성됩니다.")
-        self.org_list.currentItemChanged.connect(self._org_selected_from_list)
+        # 클릭: 조직=아코디언 토글, 팀원=캔버스 포커스+네온 강조.
+        self.org_tree.itemClicked.connect(self._on_tree_item_activated)
+        # Enter(활성화): 팀원만 캔버스로 포커스(조직 토글은 화살표/클릭으로 — 중복 토글 방지).
+        self.org_tree.itemActivated.connect(self._on_tree_item_focus_only)
         self.refresh_chart()
 
     def __getattr__(self, name: str):
@@ -301,7 +317,11 @@ class MainWindow:
         layout.addWidget(title)
         layout.addWidget(self.search_input)
         layout.addWidget(self.summary_label)
-        layout.addWidget(self.org_list, 1)
+        hint = QLabel("팀을 누르면 팀원이 펼쳐집니다. 팀원을 누르면 조직도에서 강조됩니다.")
+        hint.setObjectName("panelCaption")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+        layout.addWidget(self.org_tree, 1)
         return panel
 
     def _build_display_panel(self):
@@ -588,8 +608,9 @@ class MainWindow:
     # ── 조직도 렌더 ────────────────────────────────────────────────
     def refresh_chart(self) -> None:
         from PySide6.QtCore import Qt
-        from PySide6.QtWidgets import QListWidgetItem
+        from PySide6.QtWidgets import QTreeWidgetItem
 
+        from app.chart.layout import employee_sort_key
         from app.ui.chart_view import ChartSceneBuilder
 
         with self.session_factory() as session:
@@ -627,9 +648,19 @@ class MainWindow:
                 total_count_cache[org_id] = subtotal
                 return subtotal
 
-            self.org_list.clear()
+            # 필터(검색)된 노드에서 조직별 팀원 목록을 뽑아 트리 아코디언에 채운다.
+            node_by_id = {node.id: node for node in nodes}
 
-            def emit_org(org, depth: int) -> None:
+            # 리프레시 전 펼쳐져 있던 조직을 기억해, 재구성 후에도 아코디언 상태를 유지한다.
+            expanded_before = self._expanded_org_ids()
+            self.org_tree.clear()
+            self._employee_org.clear()
+            self._employee_labels.clear()
+            org_tree_items: dict[str, object] = {}
+
+            kind_role = Qt.ItemDataRole.UserRole + 1
+
+            def emit_org(org, parent_tree_item) -> None:
                 if query and org.id not in visible_org_ids:
                     return  # 필터에서 숨겨진 조직(및 하위)은 건너뜀.
                 direct = employee_count_by_org.get(org.id, 0)
@@ -637,15 +668,37 @@ class MainWindow:
                 total = total_members(org.id)
                 # 하위가 있고 총원이 직속과 다르면 총원을 보여 위계 규모를 드러낸다.
                 count = total if (has_children and total != direct) else direct
-                indent = "    " * depth
-                item = QListWidgetItem(f"{indent}{org.name} · {count}명")
-                item.setData(Qt.ItemDataRole.UserRole, org.id)
-                self.org_list.addItem(item)
+                org_item = QTreeWidgetItem([f"{org.name} · {count}명"])
+                org_item.setData(0, Qt.ItemDataRole.UserRole, org.id)
+                org_item.setData(0, kind_role, "org")
+                org_item.setIcon(0, make_icon("org"))
+                if parent_tree_item is None:
+                    self.org_tree.addTopLevelItem(org_item)
+                else:
+                    parent_tree_item.addChild(org_item)
+                org_tree_items[org.id] = org_item
+                # 하위 조직 먼저(구조), 그 다음 이 조직의 직속 팀원(아코디언 콘텐츠).
                 for child in children_map.get(org.id, []):
-                    emit_org(child, depth + 1)
+                    emit_org(child, org_item)
+                node = node_by_id.get(org.id)
+                if node:
+                    for employee in sorted(node.employees, key=employee_sort_key):
+                        self._employee_org[employee.id] = org.id
+                        self._employee_labels[employee.id] = employee.name
+                        role = " · ".join(
+                            filter(None, [employee.grade, employee.title])
+                        )
+                        label = f"{employee.name} · {role}" if role else employee.name
+                        emp_item = QTreeWidgetItem([label])
+                        emp_item.setData(0, Qt.ItemDataRole.UserRole, employee.id)
+                        emp_item.setData(0, kind_role, "employee")
+                        emp_item.setIcon(0, make_icon("member"))
+                        emp_item.setToolTip(0, label)
+                        org_item.addChild(emp_item)
 
             for root in children_map.get(None, []):
-                emit_org(root, 0)
+                emit_org(root, None)
+            self._restore_expanded_org_ids(expanded_before, org_tree_items)
             if hasattr(self, "summary_label"):
                 total_people = sum(len(node.employees) for node in nodes)
                 self.summary_label.setText(f"조직 {len(nodes)} · 구성원 {total_people}")
@@ -1280,14 +1333,131 @@ class MainWindow:
         if hasattr(self, "status"):
             self.status.showMessage(f"실행취소 완료: {label}", 6000)
 
-    def _org_selected_from_list(self, current, previous) -> None:
-        if not current:
+    # ── 좌측 조직 트리(아코디언) 상호작용 ─────────────────────────
+    def _expanded_org_ids(self) -> set[str]:
+        """현재 트리에서 펼쳐진 조직 id 집합(리프레시 간 아코디언 상태 유지용)."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QTreeWidgetItemIterator
+
+        expanded: set[str] = set()
+        if not hasattr(self, "org_tree"):
+            return expanded
+        iterator = QTreeWidgetItemIterator(self.org_tree)
+        while iterator.value():
+            item = iterator.value()
+            if item.isExpanded():
+                org_id = item.data(0, Qt.ItemDataRole.UserRole)
+                kind = item.data(0, Qt.ItemDataRole.UserRole + 1)
+                if kind == "org" and org_id:
+                    expanded.add(org_id)
+            iterator += 1
+        return expanded
+
+    def _restore_expanded_org_ids(self, expanded: set[str], org_tree_items: dict) -> None:
+        """이전 펼침 상태를 복원한다. 첫 로드(펼친 게 없음)면 최상위 조직만 펼친다."""
+        if expanded:
+            for org_id in expanded:
+                item = org_tree_items.get(org_id)
+                if item is not None:
+                    item.setExpanded(True)
+            return
+        for index in range(self.org_tree.topLevelItemCount()):
+            self.org_tree.topLevelItem(index).setExpanded(True)
+
+    def _on_tree_item_activated(self, item, column: int = 0) -> None:
+        """조직=아코디언 토글, 팀원=캔버스 포커스+네온 강조."""
+        if item is None:
             return
         from PySide6.QtCore import Qt
 
-        self._selected_org_id = current.data(Qt.ItemDataRole.UserRole)
-        self.name_editor.setText(current.text().rsplit(" · ", 1)[0].strip())
-        self.show_org_details(self._selected_org_id)
+        node_id = item.data(0, Qt.ItemDataRole.UserRole)
+        kind = item.data(0, Qt.ItemDataRole.UserRole + 1)
+        if kind == "org":
+            item.setExpanded(not item.isExpanded())
+            self._selected_org_id = node_id
+            self.name_editor.setText(item.text(0).rsplit(" · ", 1)[0].strip())
+            self.show_org_details(node_id)
+        elif kind == "employee":
+            self.focus_employee_on_canvas(node_id)
+
+    def _on_tree_item_focus_only(self, item, column: int = 0) -> None:
+        """키보드 활성화(Enter) 경로: 팀원만 캔버스로 포커스(조직 토글은 하지 않음)."""
+        if item is None:
+            return
+        from PySide6.QtCore import Qt
+
+        if item.data(0, Qt.ItemDataRole.UserRole + 1) == "employee":
+            self.focus_employee_on_canvas(item.data(0, Qt.ItemDataRole.UserRole))
+
+    # ── 캔버스 포커스 + 네온 강조 ─────────────────────────────────
+    def _find_scene_item(self, node_id, kind: str):
+        """씬에서 data(0)=node_id, data(1)=kind 인 카드 아이템을 찾는다."""
+        if not node_id or not self.current_scene:
+            return None
+        for item in self.current_scene.items():
+            if item.data(0) == node_id and item.data(1) == kind:
+                return item
+        return None
+
+    def _center_view_on_item(self, item) -> None:
+        """조직도 뷰를 대상 카드 중심으로 부드럽게 팬(필요 시 가독 배율로 조정)한다."""
+        from PySide6.QtCore import QEasingCurve, QVariantAnimation
+
+        view = self.chart_view
+        # 자동 재정렬(reset_view)이 포커스를 덮어쓰지 않도록 사용자 조작으로 표시.
+        view._user_adjusted = True
+        scale = view.transform().m11()
+        if scale < 0.85 or scale > 1.8:
+            view.resetTransform()
+            view.scale(1.0, 1.0)
+        target = item.sceneBoundingRect().center()
+        start = view.mapToScene(view.viewport().rect().center())
+        anim = QVariantAnimation(self._window)
+        anim.setDuration(360)
+        anim.setStartValue(start)
+        anim.setEndValue(target)
+        anim.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        anim.valueChanged.connect(view.centerOn)
+        anim.start()
+        self._focus_anim = anim  # GC 방지(끝나면 교체됨).
+
+    def _start_glow(self, item) -> None:
+        from app.ui.chart_view import pulse_neon_glow
+
+        previous = self._glow_anim
+        if previous is not None:
+            try:
+                previous.stop()
+            except RuntimeError:
+                pass
+        self._glow_effect, self._glow_anim = pulse_neon_glow(item)
+
+    def focus_employee_on_canvas(self, employee_id: str) -> None:
+        """팀원 노드를 화면 중앙으로 이동하고 네온 글로우로 강조한다.
+
+        카드가 접혀(오버플로) 캔버스에 없으면 소속 팀 카드를 대신 강조한다.
+        """
+        if not self.current_scene:
+            return
+        label = self._employee_labels.get(employee_id, "구성원")
+        item = self._find_scene_item(employee_id, "employee")
+        if item is not None:
+            self._center_view_on_item(item)
+            self._start_glow(item)
+            if hasattr(self, "status"):
+                self.status.showMessage(f"{label}님 위치로 이동했습니다.", 4000)
+            return
+        # 접힌 팀원: 소속 팀 카드(또는 +더보기 카드)를 강조.
+        org_id = self._employee_org.get(employee_id)
+        fallback = self._find_scene_item(org_id, "overflow") or self._find_scene_item(org_id, "org")
+        if fallback is not None:
+            self._center_view_on_item(fallback)
+            self._start_glow(fallback)
+            if hasattr(self, "status"):
+                self.status.showMessage(
+                    f"{label}님은 카드가 접혀 있어 소속 팀을 강조합니다. ‘+더보기’로 펼쳐 보세요.",
+                    6000,
+                )
 
     def update_selection_details(self) -> None:
         if not self.current_scene:

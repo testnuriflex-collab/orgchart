@@ -235,6 +235,29 @@ QListWidget::item:selected {{
     font-weight: 700;
 }}
 
+/* ── 조직 트리(아코디언) ───────────────────────────────────────────── */
+QTreeWidget {{
+    border: 1px solid {TOKENS['hairline']};
+    border-radius: {TOKENS['rMd']}px;
+    background: {TOKENS['panel']};
+    padding: 4px;
+    outline: 0;
+}}
+QTreeWidget::item {{
+    padding: 7px 6px;
+    border-radius: {TOKENS['rSm']}px;
+    color: {TOKENS['body']};
+    margin: 1px 2px;
+}}
+QTreeWidget::item:hover {{
+    background: {TOKENS['panelSoft']};
+}}
+QTreeWidget::item:selected {{
+    background: {TOKENS['accentSoft']};
+    color: {TOKENS['accent']};
+    font-weight: 700;
+}}
+
 /* ── 표 ───────────────────────────────────────────────────────────── */
 QTableWidget {{
     border: 1px solid {TOKENS['hairline']};

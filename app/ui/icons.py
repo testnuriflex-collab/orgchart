@@ -14,6 +14,8 @@ ICON_NAMES: dict[str, str] = {
     "excel": "fa5s.file-excel",
     "fit": "fa5s.expand",
     "search": "fa5s.search",
+    "org": "fa5s.sitemap",
+    "member": "fa5s.user",
 }
 
 # qtawesome 미설치·로드 실패 시 사용할 Qt 표준 아이콘 폴백.
@@ -28,6 +30,8 @@ _STD_FALLBACK: dict[str, str] = {
     "excel": "SP_DriveHDIcon",
     "fit": "SP_FileDialogContentsView",
     "search": "SP_FileDialogContentsView",
+    "org": "SP_DirIcon",
+    "member": "SP_FileDialogListView",
 }
 
 

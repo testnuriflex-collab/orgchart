@@ -30,6 +30,48 @@ DIVISION = "#1D4ED8"       # 본부(depth 1) 레벨 표시색 — 블루
 TEAM = "#64748B"           # 팀(depth 2+) 레벨 표시색 — 슬레이트(중성·약한 블루)
 CONNECTOR = "#C1CAD8"      # 커넥터 라인 — 뉴트럴 블루그레이
 SHADOW = (17, 22, 33, 46)  # 미세 드롭섀도 RGBA
+NEON = "#25E7FF"           # 네온 강조 색 — 다크/블루 테마와 어울리는 시안 네온
+NEON_PULSE_MS = 560        # 한 번의 네온 펄스(들숨·날숨) 길이(ms)
+NEON_PULSE_COUNT = 2       # 총 펄스 횟수 (~1.1초, 요구 0.6~1.2초 범위)
+
+
+def pulse_neon_glow(item, duration_ms: int = NEON_PULSE_MS, pulses: int = NEON_PULSE_COUNT):
+    """지정한 그래픽 아이템에 시안 네온 글로우 펄스를 입힌다.
+
+    CSS box-shadow 대신 QGraphicsDropShadowEffect(offset 0 · 큰 blur · 채도 높은
+    시안)로 카드 둘레에 발광 헤일로를 만들고, blurRadius를 base→peak→base로 반복
+    애니메이션해 은은한 네온 펄스를 연출한다. 펄스가 끝나면 이펙트를 제거해 카드를
+    원상 복구한다. 반환한 (effect, animation)은 호출부가 참조를 유지해야 GC로
+    애니메이션이 조기 중단되지 않는다.
+    """
+    from PySide6.QtCore import QEasingCurve, QPropertyAnimation
+    from PySide6.QtGui import QColor
+    from PySide6.QtWidgets import QGraphicsDropShadowEffect
+
+    glow = QGraphicsDropShadowEffect()
+    glow.setOffset(0, 0)
+    glow.setColor(QColor(NEON))
+    glow.setBlurRadius(4.0)
+    item.setGraphicsEffect(glow)
+
+    anim = QPropertyAnimation(glow, b"blurRadius")
+    anim.setDuration(duration_ms)
+    anim.setLoopCount(pulses)
+    anim.setKeyValueAt(0.0, 6.0)
+    anim.setKeyValueAt(0.5, 56.0)
+    anim.setKeyValueAt(1.0, 6.0)
+    anim.setEasingCurve(QEasingCurve.Type.InOutSine)
+
+    def _cleanup() -> None:
+        # 펄스 종료 후 글로우 제거(카드 원상 복구). 아이템이 이미 사라졌으면 무시.
+        try:
+            item.setGraphicsEffect(None)
+        except RuntimeError:
+            pass
+
+    anim.finished.connect(_cleanup)
+    anim.start()
+    return glow, anim
 
 
 def elide_text(text: str, font: object, max_width: float) -> str:
