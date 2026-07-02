@@ -161,18 +161,21 @@ class MainWindow:
         self.chart_view.setAccessibleName("조직도 캔버스")
         self.chart_view.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
         self.chart_view.setRenderHints(self.chart_view.renderHints())
+        # 리사이즈·표시 시 가독 배율로 자동 정렬(사용자가 직접 줌하기 전까지).
+        self.chart_view.reset_view_callback = self.reset_view
 
         self.center_stack = QStackedWidget()
-        self.center_stack.addWidget(self.chart_view)
-        self.center_stack.addWidget(self._build_roster_editor())
+        self.center_stack.addWidget(self.chart_view)              # index 0: 조직도
+        self.center_stack.addWidget(self._build_roster_editor())  # index 1: 표 편집
+        self.center_stack.addWidget(self._build_empty_state())    # index 2: 빈 상태
 
         # ── 우측: 표시 항목 토글 + 속성 폼 + 조직명 편집 ───────────
-        right = self._build_right_panel()
+        self.right_panel = self._build_right_panel()
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(left)
         splitter.addWidget(self.center_stack)
-        splitter.addWidget(right)
+        splitter.addWidget(self.right_panel)
         splitter.setSizes([308, 872, 300])
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
@@ -437,8 +440,143 @@ class MainWindow:
         self.roster_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.roster_table.setAlternatingRowColors(True)
         self.roster_table.setAccessibleName("명단 편집 표")
+        self.roster_table.verticalHeader().setDefaultSectionSize(38)
+        self.roster_table.setWordWrap(False)
+        # 컬럼 폭: 내용에 맞추되 남는 폭은 이메일이 흡수 → 뒤 컬럼이 잘려 가로
+        # 스크롤을 강요하던 문제 해소.
+        from PySide6.QtWidgets import QHeaderView
+
+        header = self.roster_table.horizontalHeader()
+        for column_index in range(len(ROSTER_COLUMNS)):
+            header.setSectionResizeMode(column_index, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)  # 이메일
+        header.setStretchLastSection(False)
+        header.setMinimumSectionSize(72)
         layout.addWidget(self.roster_table, 1)
         return container
+
+    def _build_empty_state(self):
+        """데이터가 없을 때 캔버스 자리에 뜨는 온보딩 카드(실제 CTA 버튼 포함)."""
+        from PySide6.QtCore import QSize, Qt
+        from PySide6.QtWidgets import (
+            QFrame,
+            QHBoxLayout,
+            QLabel,
+            QPushButton,
+            QVBoxLayout,
+            QWidget,
+        )
+
+        page = QFrame()
+        page.setObjectName("emptyStage")
+        outer = QVBoxLayout(page)
+        outer.setContentsMargins(24, 24, 24, 24)
+        outer.addStretch(1)
+
+        card = QFrame()
+        card.setObjectName("emptyCard")
+        card.setMaximumWidth(560)
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(40, 40, 40, 40)
+        card_layout.setSpacing(14)
+        card_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+
+        icon_badge = QLabel()
+        icon_badge.setObjectName("emptyBadge")
+        icon_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_badge.setPixmap(make_icon("import", primary=True).pixmap(QSize(30, 30)))
+        icon_badge.setFixedSize(64, 64)
+        badge_row = QHBoxLayout()
+        badge_row.addStretch(1)
+        badge_row.addWidget(icon_badge)
+        badge_row.addStretch(1)
+        card_layout.addLayout(badge_row)
+
+        title = QLabel("조직도를 시작해 볼까요?")
+        title.setObjectName("emptyTitle")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card_layout.addWidget(title)
+
+        desc = QLabel(
+            "인사 명단 파일(Excel · CSV · JSON)을 가져오면\n조직도가 자동으로 그려집니다."
+        )
+        desc.setObjectName("emptyDesc")
+        desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        desc.setWordWrap(True)
+        card_layout.addWidget(desc)
+
+        steps = QWidget()
+        steps_layout = QVBoxLayout(steps)
+        steps_layout.setContentsMargins(0, 6, 0, 6)
+        steps_layout.setSpacing(8)
+        for index, text in enumerate(
+            [
+                "표준 템플릿을 내려받아 명단을 채웁니다.",
+                "‘가져오기’로 채운 파일을 불러옵니다.",
+                "조직도가 생성되면 드래그로 인사발령·편집이 가능합니다.",
+            ],
+            start=1,
+        ):
+            row = QHBoxLayout()
+            row.setSpacing(10)
+            num = QLabel(str(index))
+            num.setObjectName("emptyStepNum")
+            num.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            num.setFixedSize(22, 22)
+            step_text = QLabel(text)
+            step_text.setObjectName("emptyStepText")
+            step_text.setWordWrap(True)
+            row.addWidget(num, 0, Qt.AlignmentFlag.AlignTop)
+            row.addWidget(step_text, 1)
+            steps_layout.addLayout(row)
+        card_layout.addWidget(steps)
+
+        buttons = QHBoxLayout()
+        buttons.setSpacing(10)
+        buttons.addStretch(1)
+        template_btn = QPushButton("표준 템플릿 받기")
+        template_btn.setIcon(make_icon("template"))
+        template_btn.setToolTip("표준 조직도 템플릿(명단·위계) Excel을 생성합니다.")
+        template_btn.clicked.connect(self.save_template)
+        import_btn = QPushButton("인사 파일 가져오기")
+        import_btn.setProperty("primary", True)
+        import_btn.setIcon(make_icon("import", primary=True))
+        import_btn.setToolTip("명단·위계 템플릿 또는 인사 파일을 불러옵니다.")
+        import_btn.clicked.connect(self.import_people_file)
+        buttons.addWidget(template_btn)
+        buttons.addWidget(import_btn)
+        buttons.addStretch(1)
+        card_layout.addLayout(buttons)
+
+        card_row = QHBoxLayout()
+        card_row.addStretch(1)
+        card_row.addWidget(card)
+        card_row.addStretch(1)
+        outer.addLayout(card_row)
+        outer.addStretch(1)
+        return page
+
+    def _sync_center_and_panels(self, has_data: bool) -> None:
+        """데이터 유무·현재 화면에 맞춰 빈 상태 페이지와 우측 패널 노출을 정리한다.
+
+        - 데이터 없음 & 표 편집 아님 → 빈 상태 온보딩(우측 패널 숨김).
+        - 데이터 있음 & 빈 상태 표시 중 → 조직도로 복귀.
+        - 우측 패널(표시 항목·속성·조직명)은 조직도 화면에서만 의미 있으므로
+          표 편집·빈 상태에서는 숨겨 맥락 혼선을 없앤다.
+        """
+        if not hasattr(self, "center_stack"):
+            return
+        current = self.center_stack.currentIndex()
+        if current == 1:  # 표 편집 화면은 건드리지 않음.
+            if hasattr(self, "right_panel"):
+                self.right_panel.setVisible(False)
+            return
+        if not has_data:
+            self.center_stack.setCurrentIndex(2)
+        elif current == 2:
+            self.center_stack.setCurrentIndex(0)
+        if hasattr(self, "right_panel"):
+            self.right_panel.setVisible(self.center_stack.currentIndex() == 0)
 
     # ── 조직도 렌더 ────────────────────────────────────────────────
     def refresh_chart(self) -> None:
@@ -460,14 +598,46 @@ class MainWindow:
                 org.id: sum(1 for assignment in assignments if assignment.org_unit_id == org.id)
                 for org in org_units
             }
-            self.org_list.clear()
+            # 조직 목록을 위계(DFS) 순서로, 하위 포함 인원수와 함께 그린다.
+            # (직속만 세면 본부가 '0명'으로 보여 빈 조직처럼 오해되던 문제 해소.)
+            from collections import defaultdict
+
+            children_map: dict[str | None, list] = defaultdict(list)
             for org in org_units:
+                children_map[org.parent_id].append(org)
+            for siblings in children_map.values():
+                siblings.sort(key=lambda item: (getattr(item, "display_order", 0), item.name))
+
+            total_count_cache: dict[str, int] = {}
+
+            def total_members(org_id: str) -> int:
+                if org_id in total_count_cache:
+                    return total_count_cache[org_id]
+                subtotal = employee_count_by_org.get(org_id, 0)
+                for child in children_map.get(org_id, []):
+                    subtotal += total_members(child.id)
+                total_count_cache[org_id] = subtotal
+                return subtotal
+
+            self.org_list.clear()
+
+            def emit_org(org, depth: int) -> None:
                 if query and org.id not in visible_org_ids:
-                    continue
-                count = employee_count_by_org.get(org.id, 0)
-                item = QListWidgetItem(f"{org.name} · {count}명")
+                    return  # 필터에서 숨겨진 조직(및 하위)은 건너뜀.
+                direct = employee_count_by_org.get(org.id, 0)
+                has_children = bool(children_map.get(org.id))
+                total = total_members(org.id)
+                # 하위가 있고 총원이 직속과 다르면 총원을 보여 위계 규모를 드러낸다.
+                count = total if (has_children and total != direct) else direct
+                indent = "    " * depth
+                item = QListWidgetItem(f"{indent}{org.name} · {count}명")
                 item.setData(Qt.ItemDataRole.UserRole, org.id)
                 self.org_list.addItem(item)
+                for child in children_map.get(org.id, []):
+                    emit_org(child, depth + 1)
+
+            for root in children_map.get(None, []):
+                emit_org(root, 0)
             if hasattr(self, "summary_label"):
                 total_people = sum(len(node.employees) for node in nodes)
                 self.summary_label.setText(f"조직 {len(nodes)} · 구성원 {total_people}")
@@ -481,7 +651,10 @@ class MainWindow:
         self.current_scene = builder.build(boxes)
         self.current_scene.selectionChanged.connect(self.update_selection_details)
         self.chart_view.setScene(self.current_scene)
-        self.fit_chart()
+        # 새 데이터가 그려질 때마다 사용자 줌 상태를 초기화하고 가독 배율로 재정렬한다.
+        self.chart_view._user_adjusted = False
+        self.reset_view()
+        self._sync_center_and_panels(has_data=bool(org_units))
         if hasattr(self, "status"):
             total_people = sum(len(node.employees) for node in nodes)
             if query:
@@ -489,11 +662,44 @@ class MainWindow:
             else:
                 self.status.showMessage(f"현재 조직 {len(org_units)}개, 구성원 {total_people}명")
 
+    def reset_view(self) -> None:
+        """첫 화면·데이터 갱신 시 카드 글자가 읽히는 배율로 조직도를 정렬한다.
+
+        전체 트리를 한 화면에 억지로 욱여넣어 글자가 뭉개지는 것을 막는다.
+        - 전체가 가독 배율 안에 들어오면: 종횡비 유지로 맞추고 중앙 정렬.
+        - 트리가 커서 가독 하한보다 더 축소해야 하면: 하한 배율로 고정하고
+          상단 중앙(루트가 보이는 위치)에 정렬해, 이후 스크롤/줌으로 탐색한다.
+        """
+        if not self.current_scene:
+            return
+        from app.ui.chart_view import INITIAL_MAX_ZOOM, MIN_READABLE_ZOOM
+
+        view = self.chart_view
+        rect = self.current_scene.sceneRect()
+        if rect.width() <= 0 or rect.height() <= 0:
+            return
+        viewport = view.viewport().size()
+        if viewport.width() <= 1 or viewport.height() <= 1:
+            return
+        fit_scale = min(viewport.width() / rect.width(), viewport.height() / rect.height())
+        scale = max(MIN_READABLE_ZOOM, min(INITIAL_MAX_ZOOM, fit_scale))
+        view.resetTransform()
+        view.scale(scale, scale)
+        if fit_scale >= scale - 1e-6:
+            # 전체가 화면에 들어옴 → 중앙 정렬.
+            view.centerOn(rect.center())
+        else:
+            # 가독 하한으로 고정(트리가 큼) → 상단 중앙 정렬로 루트부터 보이게.
+            top_y = rect.top() + (viewport.height() / scale) / 2
+            view.centerOn(rect.center().x(), top_y)
+
     def fit_chart(self) -> None:
+        """'전체 보기' 버튼: 조직도 전체를 한 화면에 담는다(사용자 명시적 조작)."""
         if not self.current_scene:
             return
         from PySide6.QtCore import Qt
 
+        self.chart_view._user_adjusted = True
         self.chart_view.fitInView(self.current_scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
 
     def _on_display_toggled(self) -> None:
@@ -645,10 +851,12 @@ class MainWindow:
         if self.center_stack.currentIndex() == 1:
             self.center_stack.setCurrentIndex(0)
             self.status.showMessage("조직도 화면으로 전환했습니다.", 3000)
-            self.refresh_chart()
+            self.refresh_chart()  # 내부에서 우측 패널·빈 상태를 다시 정리한다.
             return
         self.load_roster()
         self.center_stack.setCurrentIndex(1)
+        if hasattr(self, "right_panel"):
+            self.right_panel.setVisible(False)
         self.status.showMessage("명단 표 편집 화면입니다. 저장하면 조직도에 반영됩니다.", 5000)
 
     def load_roster(self) -> None:
@@ -696,7 +904,6 @@ class MainWindow:
                 if not editable:
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self.roster_table.setItem(row_index, column_index, item)
-        self.roster_table.resizeColumnsToContents()
 
     def _roster_row_values(self, row_index: int) -> tuple[str, dict[str, str]]:
         from PySide6.QtCore import Qt
@@ -974,7 +1181,7 @@ class MainWindow:
         from PySide6.QtCore import Qt
 
         self._selected_org_id = current.data(Qt.ItemDataRole.UserRole)
-        self.name_editor.setText(current.text().rsplit(" · ", 1)[0])
+        self.name_editor.setText(current.text().rsplit(" · ", 1)[0].strip())
         self.show_org_details(self._selected_org_id)
 
     def update_selection_details(self) -> None:

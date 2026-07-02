@@ -6,6 +6,11 @@ from app.chart.layout import LayoutBox
 
 MIN_ZOOM = 0.25
 MAX_ZOOM = 3.0
+# 첫 화면에서 카드 글자가 읽히도록 강제하는 배율 하한/상한.
+# 넓은 조직은 전체를 한눈에 넣으려다 글자가 뭉개지므로, 가독 하한 아래로는
+# 축소하지 않고 상단 중앙 정렬 후 스크롤로 탐색하게 한다.
+MIN_READABLE_ZOOM = 0.72
+INITIAL_MAX_ZOOM = 1.05
 
 # 조직도 캔버스 색 토큰 (styles.TOKENS와 정렬).
 CANVAS = "#F1F3F6"
@@ -540,6 +545,21 @@ class OverflowCardItem:
 
 
 class OrgChartViewMixin:
+    # 자동 초기 정렬 콜백(MainWindow.reset_view). 사용자가 직접 줌/전체보기를
+    # 하기 전까지는 리사이즈·표시 시점에 재정렬해 첫 화면 배율을 보장한다.
+    reset_view_callback: Callable[[], None] | None = None
+    _user_adjusted = False
+
+    def showEvent(self, event):  # noqa: N802
+        super().showEvent(event)
+        if self.reset_view_callback and not self._user_adjusted and self.scene():
+            self.reset_view_callback()
+
+    def resizeEvent(self, event):  # noqa: N802
+        super().resizeEvent(event)
+        if self.reset_view_callback and not self._user_adjusted and self.scene():
+            self.reset_view_callback()
+
     def wheelEvent(self, event):  # noqa: N802
         from PySide6.QtCore import Qt
 
@@ -547,6 +567,7 @@ class OrgChartViewMixin:
             raw_factor = 1.15 if event.angleDelta().y() > 0 else 0.87
             factor = clamped_zoom_factor(self.transform().m11(), raw_factor)
             self.scale(factor, factor)
+            self._user_adjusted = True
             event.accept()
             return
         super().wheelEvent(event)

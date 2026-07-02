@@ -320,8 +320,44 @@ QCheckBox::indicator:checked {{
 /* ── 조직도 캔버스 ────────────────────────────────────────────────── */
 QGraphicsView {{
     background: {TOKENS['canvas']};
+    border: 1px solid {TOKENS['hairlineStrong']};
+    border-radius: {TOKENS['rLg']}px;
+}}
+
+/* ── 빈 상태 온보딩 ───────────────────────────────────────────────── */
+#emptyStage {{
+    background: {TOKENS['canvas']};
+    border: 1px solid {TOKENS['hairlineStrong']};
+    border-radius: {TOKENS['rLg']}px;
+}}
+#emptyCard {{
+    background: {TOKENS['panel']};
     border: 1px solid {TOKENS['hairline']};
     border-radius: {TOKENS['rLg']}px;
+}}
+#emptyBadge {{
+    background: {TOKENS['accentSoft']};
+    border-radius: 32px;
+}}
+#emptyTitle {{
+    color: {TOKENS['ink']};
+    font-size: 20px;
+    font-weight: 700;
+}}
+#emptyDesc {{
+    color: {TOKENS['muted']};
+    font-size: 13px;
+}}
+#emptyStepNum {{
+    background: {TOKENS['accent']};
+    color: #FFFFFF;
+    border-radius: 11px;
+    font-size: 12px;
+    font-weight: 700;
+}}
+#emptyStepText {{
+    color: {TOKENS['body']};
+    font-size: 13px;
 }}
 
 /* ── 상태바 ───────────────────────────────────────────────────────── */
