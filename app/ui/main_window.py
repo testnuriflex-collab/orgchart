@@ -45,6 +45,23 @@ ROSTER_COLUMNS = [
 
 _EMPLOYEE_EDIT_FIELDS = {"employee_no", "name", "email", "grade", "title", "status", "hire_date", "resign_date"}
 
+# 우측 팀원 편집 패널의 입력 필드 순서. (필드키, 라벨).
+# 소속(회사/조직/부서)은 직원 필드가 아니라 배정(assignment)으로 반영된다.
+EMPLOYEE_EDITOR_FIELDS = [
+    ("employee_no", "사번"),
+    ("name", "이름"),
+    ("email", "이메일"),
+    ("company", "소속회사"),
+    ("division", "소속조직"),
+    ("department", "소속부서"),
+    ("grade", "직급"),
+    ("title", "직책"),
+    ("status", "재직상태"),
+    ("hire_date", "입사일"),
+    ("resign_date", "퇴사일"),
+]
+EMPLOYEE_STATUS_CHOICES = ["재직", "퇴사후보", "퇴사"]
+
 
 def filter_nodes_for_query(nodes, query: str):
     query = query.strip().lower()
@@ -130,6 +147,8 @@ class MainWindow:
         self.session_factory = session_factory
         self.current_scene = None
         self._selected_org_id: str | None = None
+        # 우측 편집 패널에서 현재 편집 중인 팀원 id(저장 대상).
+        self._editing_employee_id: str | None = None
         self._last_excel_path: Path | None = None
         # 커밋된 구조 변경(이동·이름변경·일괄변환)의 1단계 실행취소 스택.
         self._undo_stack: list[tuple[str, Callable[[HrRepository], None]]] = []
@@ -360,39 +379,125 @@ class MainWindow:
 
         layout.addWidget(self._build_display_panel())
 
-        prop_caption = QLabel("속성")
-        prop_caption.setObjectName("panelCaption")
-        layout.addWidget(prop_caption)
+        self.prop_caption = QLabel("속성")
+        self.prop_caption.setObjectName("panelCaption")
+        layout.addWidget(self.prop_caption)
 
-        # 라벨-값 정렬 폼(선택 시 동적으로 행을 채운다).
+        # 라벨-값 정렬 폼(조직 선택 시 읽기 전용 상세를 동적으로 채운다).
         self.prop_container = QFrame()
         self.prop_layout = QVBoxLayout(self.prop_container)
         self.prop_layout.setContentsMargins(0, 0, 0, 0)
         self.prop_layout.setSpacing(8)
-        self.prop_empty = QLabel("조직이나 직원을 선택하면\n상세 정보가 표시됩니다.")
+        self.prop_empty = QLabel("조직이나 팀원을 선택하면\n상세 정보가 표시됩니다.")
         self.prop_empty.setObjectName("propEmpty")
         self.prop_empty.setWordWrap(True)
         self.prop_empty.setAccessibleName("선택 상세 정보")
         self.prop_layout.addWidget(self.prop_empty)
         layout.addWidget(self.prop_container)
 
+        # 팀원 선택 시 나타나는 편집 폼(입력 필드 + 저장 버튼).
+        self.employee_editor = self._build_employee_editor()
+        layout.addWidget(self.employee_editor)
+
         layout.addStretch(1)
 
+        # 조직 선택 시에만 노출되는 조직명 편집 영역(팀원 모드에서는 숨김).
+        self._org_name_section = QFrame()
+        org_name_layout = QVBoxLayout(self._org_name_section)
+        org_name_layout.setContentsMargins(0, 0, 0, 0)
+        org_name_layout.setSpacing(6)
         name_caption = QLabel("조직명")
         name_caption.setObjectName("panelCaption")
-        layout.addWidget(name_caption)
+        org_name_layout.addWidget(name_caption)
         self.name_editor = QLineEdit()
         self.name_editor.setPlaceholderText("선택 항목 이름")
         self.name_editor.setAccessibleName("조직명 편집")
         self.name_editor.returnPressed.connect(self.save_selected_org_name)
-        layout.addWidget(self.name_editor)
+        org_name_layout.addWidget(self.name_editor)
         save_name_button = QPushButton("조직명 저장")
         save_name_button.setProperty("primary", True)
         save_name_button.setToolTip("선택한 조직의 이름을 저장합니다.")
         save_name_button.setAccessibleName("조직명 저장")
         save_name_button.clicked.connect(self.save_selected_org_name)
-        layout.addWidget(save_name_button)
+        org_name_layout.addWidget(save_name_button)
+        layout.addWidget(self._org_name_section)
+
+        self._show_panel_mode("empty")
         return panel
+
+    def _build_employee_editor(self):
+        """팀원 노드를 선택하면 우측에 뜨는 편집 폼(필드 입력 + 저장)."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import (
+            QComboBox,
+            QFormLayout,
+            QFrame,
+            QLabel,
+            QLineEdit,
+            QPushButton,
+            QVBoxLayout,
+        )
+
+        frame = QFrame()
+        frame.setObjectName("employeeEditor")
+        outer = QVBoxLayout(frame)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(8)
+
+        caption = QLabel("팀원 편집")
+        caption.setObjectName("panelCaption")
+        outer.addWidget(caption)
+
+        form = QFormLayout()
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setSpacing(6)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        self.emp_fields: dict[str, object] = {}
+        for field, label in EMPLOYEE_EDITOR_FIELDS:
+            if field == "status":
+                widget = QComboBox()
+                widget.setEditable(True)
+                widget.addItems(EMPLOYEE_STATUS_CHOICES)
+            else:
+                widget = QLineEdit()
+            widget.setAccessibleName(f"{label} 입력")
+            self.emp_fields[field] = widget
+            form.addRow(f"{label}", widget)
+        outer.addLayout(form)
+
+        self.emp_feedback = QLabel("")
+        self.emp_feedback.setObjectName("propKey")
+        self.emp_feedback.setWordWrap(True)
+        outer.addWidget(self.emp_feedback)
+
+        save_button = QPushButton("팀원 저장")
+        save_button.setProperty("primary", True)
+        save_button.setToolTip("입력한 팀원 정보를 DB와 Excel, 조직도에 반영합니다.")
+        save_button.setAccessibleName("팀원 저장")
+        save_button.clicked.connect(self.save_employee_edits)
+        outer.addWidget(save_button)
+        return frame
+
+    def _show_panel_mode(self, mode: str) -> None:
+        """우측 패널을 상황(빈 상태/조직/팀원)에 맞춰 전환한다."""
+        is_employee = mode == "employee"
+        if hasattr(self, "prop_caption"):
+            self.prop_caption.setVisible(not is_employee)
+            self.prop_container.setVisible(not is_employee)
+        if hasattr(self, "employee_editor"):
+            self.employee_editor.setVisible(is_employee)
+        if hasattr(self, "_org_name_section"):
+            self._org_name_section.setVisible(mode == "org")
+
+    def _employee_field_value(self, field: str) -> str:
+        from PySide6.QtWidgets import QComboBox
+
+        widget = self.emp_fields.get(field)
+        if isinstance(widget, QComboBox):
+            return widget.currentText().strip()
+        if widget is not None:
+            return widget.text().strip()
+        return ""
 
     # ── 속성 폼 갱신 ──────────────────────────────────────────────
     def _clear_property_rows(self) -> None:
@@ -710,6 +815,13 @@ class MainWindow:
             self.display_options,
             refresh_callback=self.refresh_chart,
         )
+        # 이전 씬을 교체하기 전에 선택 신호를 끊어, 파괴되는 옛 씬이 selectionChanged를
+        # 발신해 이미 삭제된 C++ 객체에 접근(RuntimeError)하는 것을 막는다.
+        if self.current_scene is not None:
+            try:
+                self.current_scene.selectionChanged.disconnect(self.update_selection_details)
+            except (RuntimeError, TypeError):
+                pass
         self.current_scene = builder.build(boxes)
         self.current_scene.selectionChanged.connect(self.update_selection_details)
         self.chart_view.setScene(self.current_scene)
@@ -1439,6 +1551,8 @@ class MainWindow:
         """
         if not self.current_scene:
             return
+        # 트리·캔버스 어느 경로로 들어와도 우측 편집 폼을 해당 팀원으로 채운다.
+        self.show_employee_details(employee_id)
         label = self._employee_labels.get(employee_id, "구성원")
         item = self._find_scene_item(employee_id, "employee")
         if item is not None:
@@ -1462,7 +1576,11 @@ class MainWindow:
     def update_selection_details(self) -> None:
         if not self.current_scene:
             return
-        selected = self.current_scene.selectedItems()
+        try:
+            selected = self.current_scene.selectedItems()
+        except RuntimeError:
+            # 씬 교체 도중 파괴된 옛 씬이 신호를 보낼 수 있으므로 방어한다.
+            return
         if not selected:
             return
         item = selected[0]
@@ -1504,6 +1622,7 @@ class MainWindow:
             member_summary = ", ".join(member_names[:12])
             if len(member_names) > 12:
                 member_summary = f"{member_summary}, 외 {len(member_names) - 12}명"
+            self._editing_employee_id = None
             self.name_editor.setText(org.name)
             self._set_property_rows(
                 org.name,
@@ -1514,8 +1633,12 @@ class MainWindow:
                     ("구성원", member_summary),
                 ],
             )
+            self._show_panel_mode("org")
 
     def show_employee_details(self, employee_id: str) -> None:
+        """팀원 편집 폼에 현재 값을 채우고 우측 패널을 팀원 모드로 전환한다."""
+        from PySide6.QtWidgets import QComboBox
+
         with self.session_factory() as session:
             from app.db.models import Employee
 
@@ -1526,19 +1649,90 @@ class MainWindow:
                 (item for item in HrRepository(session).list_active_assignments() if item.employee_id == employee_id),
                 None,
             )
-            org_name = assignment.org_unit.name if assignment else "미지정"
-            self._set_property_rows(
-                employee.name,
-                [
-                    ("소속", org_name),
-                    ("사번", employee.employee_no or ""),
-                    ("이메일", employee.email or ""),
-                    ("직급/직책", " · ".join(filter(None, [employee.grade, employee.title]))),
-                    ("상태", employee.status or ""),
-                    ("입사일", employee.hire_date or ""),
-                    ("퇴사일", employee.resign_date or ""),
-                ],
-            )
+            org_path = org_ancestor_names(assignment.org_unit) if assignment else []
+            # 명단 표와 동일한 규칙으로 경로를 회사/조직/부서 3단계에 매핑한다.
+            company = org_path[0] if len(org_path) >= 2 else ""
+            division = " / ".join(org_path[1:-1]) if len(org_path) >= 3 else ""
+            department = org_path[-1] if org_path else ""
+            values = {
+                "employee_no": employee.employee_no or "",
+                "name": employee.name or "",
+                "email": employee.email or "",
+                "company": company,
+                "division": division,
+                "department": department,
+                "grade": employee.grade or "",
+                "title": employee.title or "",
+                "status": employee.status or "",
+                "hire_date": employee.hire_date or "",
+                "resign_date": employee.resign_date or "",
+            }
+
+        self._editing_employee_id = employee_id
+        for field, _ in EMPLOYEE_EDITOR_FIELDS:
+            widget = self.emp_fields.get(field)
+            text = values.get(field, "")
+            if isinstance(widget, QComboBox):
+                widget.setCurrentText(text)
+            elif widget is not None:
+                widget.setText(text)
+        if hasattr(self, "emp_feedback"):
+            self.emp_feedback.setText("")
+        self._show_panel_mode("employee")
+
+    def save_employee_edits(self) -> None:
+        """팀원 편집 폼 내용을 DB·Excel·조직도에 반영한다."""
+        from PySide6.QtWidgets import QMessageBox
+
+        employee_id = self._editing_employee_id
+        if not employee_id:
+            return
+        values = {field: self._employee_field_value(field) for field, _ in EMPLOYEE_EDITOR_FIELDS}
+        if not values.get("name"):
+            self.emp_feedback.setText("⚠ 이름은 비워 둘 수 없습니다.")
+            QMessageBox.warning(self._window, "저장 불가", "이름은 반드시 입력해야 합니다.")
+            self.status.showMessage("팀원 저장 실패: 이름은 필수 항목입니다.", 5000)
+            return
+        updated = False
+        moved = False
+        try:
+            with self.session_factory() as session:
+                repository = HrRepository(session)
+                fields = {field: values.get(field) for field in _EMPLOYEE_EDIT_FIELDS}
+                updated = repository.update_employee_fields(employee_id, fields)
+                path_names = [values.get("company"), values.get("division"), values.get("department")]
+                path_names = [name for name in path_names if name]
+                if path_names:
+                    target = repository.ensure_org_path(path_names)
+                    current = next(
+                        (
+                            assignment
+                            for assignment in repository.list_active_assignments()
+                            if assignment.employee_id == employee_id
+                        ),
+                        None,
+                    )
+                    if not current or current.org_unit_id != target.id:
+                        repository.move_employee(employee_id, target.id)
+                        moved = True
+                session.commit()
+        except Exception as exc:
+            self.emp_feedback.setText("⚠ 저장 실패")
+            QMessageBox.critical(self._window, "저장 실패", f"팀원 정보를 저장하지 못했습니다.\n{exc}")
+            self.status.showMessage("팀원 저장 실패", 5000)
+            return
+        self._reexport_excel_if_tracked()
+        self.refresh_chart()
+        # 조직도 재구성 후 편집한 팀원을 다시 강조하고 폼을 최신 값으로 되채운다.
+        self.focus_employee_on_canvas(employee_id)
+        summary_parts = []
+        if updated:
+            summary_parts.append("정보 수정")
+        if moved:
+            summary_parts.append("소속 이동")
+        summary = " · ".join(summary_parts) if summary_parts else "변경 없음"
+        self.emp_feedback.setText(f"✓ 저장 완료 ({summary})")
+        self.status.showMessage(f"팀원 저장 완료: {values['name']} ({summary})", 6000)
 
     def _exit_candidate_options(self, session, employee_ids: list[str]) -> list[tuple[str, str]]:
         from app.db.models import Employee

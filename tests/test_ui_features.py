@@ -125,3 +125,72 @@ def test_save_template_writes_two_sheet_workbook(tmp_path: Path, monkeypatch) ->
 
     assert target.exists()
     assert {"명단", "위계"}.issubset(set(pd.ExcelFile(target).sheet_names))
+
+
+def test_employee_editor_saves_fields_and_moves_department(tmp_path: Path) -> None:
+    _app()
+    session_factory = _factory(tmp_path)
+    _seed(session_factory, [EmployeeInput(employee_no="A001", name="홍길동", department="인사팀", title="팀원")])
+    window = MainWindow(session_factory)
+
+    with session_factory() as session:
+        employee_id = HrRepository(session).list_employees()[0].id
+
+    # 팀원 선택 → 우측 편집 폼이 팀원 모드로 채워진다.
+    window.show_employee_details(employee_id)
+    assert window.employee_editor.isVisible() or window._editing_employee_id == employee_id
+    assert window.emp_fields["name"].text() == "홍길동"
+    assert window.emp_fields["department"].text() == "인사팀"
+
+    # 값 수정 후 저장 → DB 반영 + 소속 이동.
+    window.emp_fields["name"].setText("홍길동2")
+    window.emp_fields["title"].setText("팀장")
+    window.emp_fields["department"].setText("재무팀")
+    window.save_employee_edits()
+
+    with session_factory() as session:
+        repository = HrRepository(session)
+        employee = repository.list_employees()[0]
+        assert employee.name == "홍길동2"
+        assert employee.title == "팀장"
+        assert repository.list_active_assignments()[0].org_unit.name == "재무팀"
+
+
+def test_employee_editor_rejects_empty_name(tmp_path: Path, monkeypatch) -> None:
+    _app()
+    session_factory = _factory(tmp_path)
+    _seed(session_factory, [EmployeeInput(employee_no="A001", name="홍길동", department="인사팀")])
+    window = MainWindow(session_factory)
+    with session_factory() as session:
+        employee_id = HrRepository(session).list_employees()[0].id
+
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: QMessageBox.StandardButton.Ok)
+    window.show_employee_details(employee_id)
+    window.emp_fields["name"].setText("")
+    window.save_employee_edits()
+
+    with session_factory() as session:
+        assert HrRepository(session).list_employees()[0].name == "홍길동"  # 변경되지 않음
+
+
+def test_employee_editor_save_reexports_tracked_excel(tmp_path: Path) -> None:
+    import pandas as pd
+
+    _app()
+    session_factory = _factory(tmp_path)
+    _seed(session_factory, [EmployeeInput(employee_no="A001", name="홍길동", department="인사팀", title="팀원")])
+    window = MainWindow(session_factory)
+    with session_factory() as session:
+        employee_id = HrRepository(session).list_employees()[0].id
+
+    tracked = tmp_path / "인사DB.xlsx"
+    window._last_excel_path = tracked
+
+    window.show_employee_details(employee_id)
+    window.emp_fields["title"].setText("본부장")
+    window.save_employee_edits()
+
+    assert tracked.exists()
+    frame = pd.read_excel(tracked, sheet_name="인사DB", dtype=str)
+    assert (frame["이름"] == "홍길동").any()
+    assert (frame["직책"] == "본부장").any()
