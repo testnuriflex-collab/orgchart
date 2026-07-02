@@ -36,11 +36,11 @@ class LayoutBox:
     meta: dict[str, str | None] = field(default_factory=dict)
 
 
-CARD_WIDTH = 260
+CARD_WIDTH = 272
 ORG_HEIGHT = 96
-EMPLOYEE_HEIGHT = 74
-H_GAP = 64
-V_GAP = 72
+EMPLOYEE_HEIGHT = 76
+H_GAP = 68
+V_GAP = 76
 EMPLOYEE_GAP = 14
 VISIBLE_EMPLOYEE_LIMIT = 6
 COMPACT_EMPLOYEE_LIMIT = 5
@@ -150,10 +150,18 @@ def compute_org_layout(org_units: list[OrgNode], highlight_query: str = "") -> l
         row_count = visible_count + overflow_count
         return MEMBER_START_GAP + row_count * EMPLOYEE_HEIGHT + (row_count - 1) * EMPLOYEE_GAP
 
-    def place(org: OrgNode, left: float, top: float, visual_parent_id: str | None = None) -> float:
+    def place(
+        org: OrgNode,
+        left: float,
+        top: float,
+        visual_parent_id: str | None = None,
+        depth: int = 0,
+    ) -> float:
         width = subtree_width(org)
         org_x = left + (width - CARD_WIDTH) / 2
         tone = str((org.display_order + len(org.name)) % 5)
+        # 레벨별 색 구분용 위계 라벨: 0=회사, 1=본부, 2+=팀.
+        level = "company" if depth == 0 else ("division" if depth == 1 else "team")
         boxes.append(
             LayoutBox(
                 id=org.id,
@@ -169,6 +177,8 @@ def compute_org_layout(org_units: list[OrgNode], highlight_query: str = "") -> l
                     "highlight": "true" if highlight_query and highlight_query in org.name.lower() else None,
                     "employee_count": str(len(org.employees)),
                     "is_root": "true" if org.parent_id is None else None,
+                    "level": level,
+                    "depth": str(depth),
                     "tone": tone,
                 },
             )
@@ -258,7 +268,7 @@ def compute_org_layout(org_units: list[OrgNode], highlight_query: str = "") -> l
         child_left = left
         for child in children.get(org.id, []):
             child_width = subtree_width(child)
-            place(child, child_left, child_top)
+            place(child, child_left, child_top, depth=depth + 1)
             child_left += child_width + H_GAP
         return width
 

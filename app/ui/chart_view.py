@@ -7,18 +7,24 @@ from app.chart.layout import LayoutBox
 MIN_ZOOM = 0.25
 MAX_ZOOM = 3.0
 
-CANVAS = "#F7F7F7"
-INK = "#222222"
-MUTED = "#4A4A4A"
-SUBTLE = "#8A918D"
-HAIRLINE = "#DDDDDD"
+# 조직도 캔버스 색 토큰 (styles.TOKENS와 정렬).
+CANVAS = "#F1F3F6"
+INK = "#1B1F27"
+MUTED = "#6B7280"
+SUBTLE = "#9AA1AC"
+HAIRLINE = "#E4E7EC"
+HAIRLINE_STRONG = "#D3D8DF"
 SURFACE = "#FFFFFF"
-SURFACE_SOFT = "#FBFBFA"
-HIGHLIGHT_TINT = "#FFF7F8"
+SURFACE_SOFT = "#F6F8FA"
+HIGHLIGHT_TINT = "#FBEDF0"
 ACCENT = "#A0002A"
+ACCENT_SOFT = "#FBEDF0"
 SUCCESS = "#0F7B45"
-ROOT = "#3F3F3F"
-CONNECTOR = "#C8C8C8"
+ROOT = "#1B1F27"          # 회사(최상위) 카드 배경
+DIVISION = "#A0002A"      # 본부(depth 1) 레벨 표시색
+TEAM = "#5A6474"          # 팀(depth 2+) 레벨 표시색
+CONNECTOR = "#C7CDD6"
+SHADOW = (17, 22, 33, 46)  # 미세 드롭섀도 RGBA
 
 
 def elide_text(text: str, font: object, max_width: float) -> str:
@@ -216,6 +222,18 @@ def _prepare_hit_rect(rect) -> None:
     rect.setPen(QPen(Qt.PenStyle.NoPen))
 
 
+def _apply_soft_shadow(item, blur: float = 18.0, dy: float = 4.0) -> None:
+    """카드에 미세한 드롭섀도를 입혀 캔버스에서 떠 보이게 한다."""
+    from PySide6.QtGui import QColor
+    from PySide6.QtWidgets import QGraphicsDropShadowEffect
+
+    effect = QGraphicsDropShadowEffect()
+    effect.setBlurRadius(blur)
+    effect.setColor(QColor(*SHADOW))
+    effect.setOffset(0, dy)
+    item.setGraphicsEffect(effect)
+
+
 class OrgCardItem:
     def __init__(
         self,
@@ -250,43 +268,63 @@ class OrgCardItem:
         self.group.setData(0, box.id)
         self.group.setData(1, "org")
         is_highlighted = bool(box.meta.get("highlight"))
+        level = box.meta.get("level") or ("company" if is_root else "team")
         _prepare_hit_rect(self.group)
         self.group.setAcceptDrops(True)
         self.group.setFlag(QGraphicsRectItem.GraphicsItemFlag.ItemIsSelectable, True)
         if can_reparent:
             self.group.setFlag(QGraphicsRectItem.GraphicsItemFlag.ItemIsMovable, True)
-        _rounded_rect_item(
+
+        # 레벨별 색 구분: 회사=다크, 본부=액센트, 팀=중성.
+        if is_root:
+            fill_color = ROOT
+            border_color = ROOT
+            level_color = "#FFFFFF"
+        else:
+            fill_color = HIGHLIGHT_TINT if is_highlighted else SURFACE
+            border_color = ACCENT if is_highlighted else HAIRLINE_STRONG
+            level_color = DIVISION if level == "division" else TEAM
+            if is_highlighted:
+                level_color = ACCENT
+        card = _rounded_rect_item(
             self.group,
             box.x,
             box.y,
             box.width,
             box.height,
             14,
-            ROOT if is_root else (HIGHLIGHT_TINT if is_highlighted else SURFACE),
-            ACCENT if is_highlighted else HAIRLINE,
+            fill_color,
+            border_color,
             2 if is_highlighted else 1,
         )
+        _apply_soft_shadow(card, blur=22 if is_root else 16, dy=5 if is_root else 3)
 
-        if not is_root:
-            indicator = QGraphicsRectItem(box.x + 16, box.y + 16, 34, 4, self.group)
-            indicator_color = ACCENT if is_highlighted else SUCCESS
-            indicator.setBrush(QBrush(QColor(indicator_color)))
-            indicator.setPen(QPen(QColor(indicator_color), 1))
+        # 레벨 표시 바(좌상단). 회사는 흰 점, 본부·팀은 색으로 위계 구분.
+        indicator = QGraphicsRectItem(box.x + 18, box.y + 18, 30, 4, self.group)
+        indicator.setBrush(QBrush(QColor(level_color)))
+        indicator.setPen(QPen(QColor(level_color), 0))
 
-        title_font = QFont("Paperlogy", 14, QFont.Weight.DemiBold)
-        title = QGraphicsTextItem(elide_text(box.label, title_font, box.width - 32), self.group)
+        level_label = {"company": "회사", "division": "본부", "team": "팀"}.get(level, "")
+        if level_label:
+            tag = QGraphicsTextItem(level_label, self.group)
+            tag.setDefaultTextColor(QColor("#C7CBD3" if is_root else SUBTLE))
+            tag.setFont(QFont("Paperlogy", 8, QFont.Weight.Bold))
+            tag.setPos(box.x + box.width - 44, box.y + 14)
+
+        title_font = QFont("Paperlogy", 15, QFont.Weight.Bold)
+        title = QGraphicsTextItem(elide_text(box.label, title_font, box.width - 36), self.group)
         title.setToolTip(box.label)
         title.setDefaultTextColor(QColor("#FFFFFF" if is_root else INK))
         title.setFont(title_font)
-        title.setTextWidth(box.width - 32)
-        title.setPos(box.x + 16, box.y + (22 if is_root else 28))
+        title.setTextWidth(box.width - 36)
+        title.setPos(box.x + 18, box.y + 34)
 
         count = box.meta.get("employee_count") or "0"
         hint = QGraphicsTextItem(("최상위 조직" if is_root else f"구성원 {count}명"), self.group)
-        hint.setDefaultTextColor(QColor("#EDEDED" if is_root else MUTED))
-        hint.setFont(QFont("Paperlogy", 10, QFont.Weight.Normal))
-        hint.setTextWidth(box.width - 32)
-        hint.setPos(box.x + 16, box.y + (55 if is_root else 60))
+        hint.setDefaultTextColor(QColor("#B9BEC7" if is_root else MUTED))
+        hint.setFont(QFont("Paperlogy", 11, QFont.Weight.Medium))
+        hint.setTextWidth(box.width - 36)
+        hint.setPos(box.x + 18, box.y + 64)
         self.text_items = [title, hint]
         self.graphics_item = self.group
 
@@ -304,22 +342,23 @@ class SummaryCardItem:
         self.group.setData(1, "summary")
         _prepare_hit_rect(self.group)
         self.group.setFlag(QGraphicsRectItem.GraphicsItemFlag.ItemIsSelectable, True)
-        _rounded_rect_item(self.group, box.x, box.y, box.width, box.height, 14, SURFACE, HAIRLINE)
-        indicator = QGraphicsRectItem(box.x + 16, box.y + 16, 34, 4, self.group)
-        indicator.setBrush(QBrush(QColor(ROOT)))
-        indicator.setPen(QPen(QColor(ROOT), 1))
+        card = _rounded_rect_item(self.group, box.x, box.y, box.width, box.height, 14, ROOT, ROOT)
+        _apply_soft_shadow(card, blur=22, dy=5)
+        indicator = QGraphicsRectItem(box.x + 18, box.y + 18, 30, 4, self.group)
+        indicator.setBrush(QBrush(QColor("#FFFFFF")))
+        indicator.setPen(QPen(QColor("#FFFFFF"), 0))
 
         title = QGraphicsTextItem(box.label, self.group)
-        title.setDefaultTextColor(QColor(INK))
-        title.setFont(QFont("Paperlogy", 14, QFont.Weight.DemiBold))
-        title.setTextWidth(box.width - 32)
-        title.setPos(box.x + 16, box.y + 28)
+        title.setDefaultTextColor(QColor("#FFFFFF"))
+        title.setFont(QFont("Paperlogy", 15, QFont.Weight.Bold))
+        title.setTextWidth(box.width - 36)
+        title.setPos(box.x + 18, box.y + 34)
 
         hint = QGraphicsTextItem("전체 조직", self.group)
-        hint.setDefaultTextColor(QColor(MUTED))
-        hint.setFont(QFont("Paperlogy", 10))
-        hint.setTextWidth(box.width - 32)
-        hint.setPos(box.x + 16, box.y + 60)
+        hint.setDefaultTextColor(QColor("#B9BEC7"))
+        hint.setFont(QFont("Paperlogy", 11, QFont.Weight.Medium))
+        hint.setTextWidth(box.width - 36)
+        hint.setPos(box.x + 18, box.y + 64)
         self.text_items = [title, hint]
         self.graphics_item = self.group
 
@@ -362,7 +401,7 @@ class EmployeeCardItem:
         _prepare_hit_rect(self.item)
         self.item.setFlag(QGraphicsRectItem.GraphicsItemFlag.ItemIsSelectable, True)
         self.item.setFlag(QGraphicsRectItem.GraphicsItemFlag.ItemIsMovable, True)
-        _rounded_rect_item(
+        card = _rounded_rect_item(
             self.item,
             box.x,
             box.y,
@@ -370,9 +409,10 @@ class EmployeeCardItem:
             box.height,
             12,
             HIGHLIGHT_TINT if is_highlighted else SURFACE,
-            ACCENT if is_highlighted else HAIRLINE,
+            ACCENT if is_highlighted else HAIRLINE_STRONG,
             2 if is_highlighted else 1,
         )
+        _apply_soft_shadow(card, blur=11, dy=2)
         self.item.setToolTip(
             "\n".join(
                 filter(
@@ -387,22 +427,26 @@ class EmployeeCardItem:
             )
         )
 
-        bar = QGraphicsRectItem(box.x + 1, box.y + 12, 4, box.height - 24, self.item)
-        bar_color = ACCENT if is_highlighted else SUCCESS
+        status_value = box.meta.get("status") or "재직"
+        is_active = status_value == "재직"
+        bar = QGraphicsRectItem(box.x, box.y + 12, 4, box.height - 24, self.item)
+        bar_color = ACCENT if is_highlighted else (SUCCESS if is_active else TEAM)
         bar.setBrush(QBrush(QColor(bar_color)))
-        bar.setPen(QPen(QColor(bar_color), 1))
+        bar.setPen(QPen(QColor(bar_color), 0))
 
         self.text_items = []
+        text_x = box.x + 22
+        text_w = box.width - 34
 
-        name_font = QFont("Paperlogy", 13, QFont.Weight.DemiBold)
-        name_text = elide_text(box.label, name_font, box.width - 38) if options.get("name", True) else ""
+        name_font = QFont("Paperlogy", 13, QFont.Weight.Bold)
+        name_text = elide_text(box.label, name_font, text_w - 40) if options.get("name", True) else ""
         name = QGraphicsTextItem(name_text, self.item)
         if options.get("name", True):
             name.setToolTip(box.label)
         name.setDefaultTextColor(QColor(INK))
         name.setFont(name_font)
-        name.setTextWidth(box.width - 38)
-        name.setPos(box.x + 28, box.y + 28)
+        name.setTextWidth(text_w)
+        name.setPos(text_x, box.y + 13)
         self.text_items.append(name)
 
         meta_parts: list[str] = []
@@ -413,11 +457,11 @@ class EmployeeCardItem:
         if options.get("department", False):
             meta_parts.append(box.meta.get("department") or "")
         meta_text = " · ".join(part for part in meta_parts if part) or "직원"
-        meta = QGraphicsTextItem(meta_text, self.item)
+        meta = QGraphicsTextItem(elide_text(meta_text, QFont("Paperlogy", 11), text_w), self.item)
         meta.setDefaultTextColor(QColor(MUTED))
-        meta.setFont(QFont("Paperlogy", 10, QFont.Weight.Normal))
-        meta.setTextWidth(box.width - 38)
-        meta.setPos(box.x + 28, box.y + 8)
+        meta.setFont(QFont("Paperlogy", 11, QFont.Weight.Normal))
+        meta.setTextWidth(text_w)
+        meta.setPos(text_x, box.y + 35)
         self.text_items.append(meta)
 
         identity_value = ""
@@ -425,19 +469,18 @@ class EmployeeCardItem:
             identity_value = box.meta.get("email") or ""
         elif options.get("employee_no", True) and box.meta.get("employee_no"):
             identity_value = box.meta.get("employee_no") or ""
-        identity = QGraphicsTextItem(identity_value, self.item)
+        identity = QGraphicsTextItem(elide_text(identity_value, QFont("Paperlogy", 10), text_w), self.item)
         identity.setDefaultTextColor(QColor(SUBTLE))
-        identity.setFont(QFont("Paperlogy", 9))
-        identity.setTextWidth(box.width - 38)
-        identity.setPos(box.x + 28, box.y + 50)
+        identity.setFont(QFont("Paperlogy", 10))
+        identity.setTextWidth(text_w)
+        identity.setPos(text_x, box.y + 53)
         self.text_items.append(identity)
 
         if options.get("status", True):
-            status = QGraphicsTextItem(box.meta.get("status") or "재직", self.item)
-            status_color = SUCCESS if (box.meta.get("status") or "재직") == "재직" else ACCENT
-            status.setDefaultTextColor(QColor(status_color))
-            status.setFont(QFont("Paperlogy", 9, QFont.Weight.Medium))
-            status.setPos(box.x + box.width - 46, box.y + 8)
+            status = QGraphicsTextItem(status_value, self.item)
+            status.setDefaultTextColor(QColor(SUCCESS if is_active else MUTED))
+            status.setFont(QFont("Paperlogy", 10, QFont.Weight.Bold))
+            status.setPos(box.x + box.width - 48, box.y + 13)
             self.text_items.append(status)
         self.graphics_item = self.item
 
@@ -456,7 +499,7 @@ class OverflowCardItem:
         is_highlighted = bool(box.meta.get("highlight"))
         _prepare_hit_rect(self.item)
         self.item.setFlag(QGraphicsRectItem.GraphicsItemFlag.ItemIsSelectable, True)
-        _rounded_rect_item(
+        card = _rounded_rect_item(
             self.item,
             box.x,
             box.y,
@@ -464,30 +507,31 @@ class OverflowCardItem:
             box.height,
             12,
             HIGHLIGHT_TINT if is_highlighted else SURFACE_SOFT,
-            ACCENT if is_highlighted else HAIRLINE,
+            ACCENT if is_highlighted else HAIRLINE_STRONG,
             2 if is_highlighted else 1,
         )
+        _apply_soft_shadow(card, blur=11, dy=2)
         tooltip = "접힌 구성원은 오른쪽 조직 상세에서 확인합니다."
         if box.meta.get("employee_names"):
             tooltip = f"{tooltip}\n{box.meta['employee_names']}"
         self.item.setToolTip(tooltip)
 
-        bar = QGraphicsRectItem(box.x + 1, box.y + 12, 4, box.height - 24, self.item)
+        bar = QGraphicsRectItem(box.x, box.y + 12, 4, box.height - 24, self.item)
         overflow_bar = ACCENT if is_highlighted else SUBTLE
         bar.setBrush(QBrush(QColor(overflow_bar)))
-        bar.setPen(QPen(QColor(overflow_bar), 1))
+        bar.setPen(QPen(QColor(overflow_bar), 0))
 
         label = QGraphicsTextItem(box.label, self.item)
-        label.setDefaultTextColor(QColor(INK))
-        label.setFont(QFont("Paperlogy", 13, QFont.Weight.DemiBold))
-        label.setTextWidth(box.width - 38)
-        label.setPos(box.x + 28, box.y + 18)
+        label.setDefaultTextColor(QColor(ACCENT if is_highlighted else INK))
+        label.setFont(QFont("Paperlogy", 13, QFont.Weight.Bold))
+        label.setTextWidth(box.width - 34)
+        label.setPos(box.x + 22, box.y + 18)
 
-        hint = QGraphicsTextItem("조직 상세 보기", self.item)
+        hint = QGraphicsTextItem("조직 상세에서 전체 보기", self.item)
         hint.setDefaultTextColor(QColor(MUTED))
-        hint.setFont(QFont("Paperlogy", 10))
-        hint.setTextWidth(box.width - 38)
-        hint.setPos(box.x + 28, box.y + 44)
+        hint.setFont(QFont("Paperlogy", 10, QFont.Weight.Medium))
+        hint.setTextWidth(box.width - 34)
+        hint.setPos(box.x + 22, box.y + 42)
         self.text_items = [label, hint]
         self.graphics_item = self.item
 

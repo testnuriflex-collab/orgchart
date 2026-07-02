@@ -15,6 +15,7 @@ from app.importer.excel_importer import INPUT_FILE_FILTER, PeopleFileImporter
 from app.importer.sample_files import write_org_template
 from app.ui.chart_view import OrgChartViewMixin
 from app.ui.dialogs import BulkRenameDialog, ImportPreviewDialog
+from app.ui.icons import make_icon
 
 # 표시 항목 토글 정의: (필드키, 라벨).
 DISPLAY_TOGGLES = [
@@ -114,7 +115,6 @@ class MainWindow:
             QLineEdit,
             QListWidget,
             QMainWindow,
-            QPushButton,
             QSplitter,
             QStackedWidget,
             QVBoxLayout,
@@ -135,28 +135,26 @@ class MainWindow:
         self._undo_stack: list[tuple[str, Callable[[HrRepository], None]]] = []
         self.display_options = CardDisplayOptions().as_dict()
 
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-
-        # ── 좌측: 아이콘 중심 커맨드 레일 + 조직 목록 ──────────────────
-        self.command_rail = self._build_command_rail()
+        # ── 상단 헤더바(앱 아이덴티티 + 그룹화된 아이콘 툴바) ──────────
+        self.header_bar = self._build_header_bar()
         if "실행취소" in self._rail_buttons:
             self._rail_buttons["실행취소"].setEnabled(False)
 
+        # ── 좌측: 검색 + 조직 목록 패널 ───────────────────────────────
         self.org_list = QListWidget()
+        self.org_list.setAccessibleName("조직 목록")
         self.search_input = QLineEdit()
+        self.search_input.setObjectName("searchInput")
         self.search_input.setPlaceholderText("이름·조직·직책 검색")
         self.search_input.setAccessibleName("조직도 검색")
+        self.search_input.setClearButtonEnabled(True)
+        self.search_input.addAction(
+            make_icon("search"), QLineEdit.ActionPosition.LeadingPosition
+        )
         self.search_input.textChanged.connect(self.refresh_chart)
-
-        left = QWidget()
-        left_layout = QVBoxLayout(left)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.addWidget(self.command_rail)
-        left_layout.addWidget(QLabel("조직 목록"))
         self.summary_label = QLabel("조직 0 · 구성원 0")
-        left_layout.addWidget(self.search_input)
-        left_layout.addWidget(self.summary_label)
-        left_layout.addWidget(self.org_list, 1)
+        self.summary_label.setObjectName("summaryPill")
+        left = self._build_left_panel()
 
         # ── 중앙: 조직도 캔버스 ⇄ 명단 표 편집 (스택 전환) ───────────
         self.chart_view = OrgChartView()
@@ -168,31 +166,32 @@ class MainWindow:
         self.center_stack.addWidget(self.chart_view)
         self.center_stack.addWidget(self._build_roster_editor())
 
-        # ── 우측: 표시 항목 토글 + 속성 패널 ───────────────────────
-        right = QWidget()
-        right_layout = QVBoxLayout(right)
-        right_layout.addWidget(self._build_display_panel())
-        right_layout.addWidget(QLabel("속성"))
-        self.detail_label = QLabel("조직이나 직원을 선택하면 상세 정보가 표시됩니다.")
-        self.detail_label.setWordWrap(True)
-        self.detail_label.setAccessibleName("선택 상세 정보")
-        right_layout.addWidget(self.detail_label)
-        self.name_editor = QLineEdit()
-        self.name_editor.setPlaceholderText("선택 항목 이름")
-        self.name_editor.setAccessibleName("조직명 편집")
-        save_name_button = QPushButton("조직명 저장")
-        save_name_button.setToolTip("선택한 조직의 이름을 저장합니다.")
-        save_name_button.setAccessibleName("조직명 저장")
-        save_name_button.clicked.connect(self.save_selected_org_name)
-        right_layout.addWidget(self.name_editor)
-        right_layout.addWidget(save_name_button)
-        right_layout.addStretch()
+        # ── 우측: 표시 항목 토글 + 속성 폼 + 조직명 편집 ───────────
+        right = self._build_right_panel()
 
+        splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(left)
         splitter.addWidget(self.center_stack)
         splitter.addWidget(right)
-        splitter.setSizes([300, 900, 300])
-        self._window.setCentralWidget(splitter)
+        splitter.setSizes([308, 872, 300])
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setStretchFactor(2, 0)
+        splitter.setChildrenCollapsible(False)
+
+        body = QWidget()
+        body_layout = QVBoxLayout(body)
+        body_layout.setContentsMargins(16, 16, 16, 14)
+        body_layout.setSpacing(0)
+        body_layout.addWidget(splitter)
+
+        central = QWidget()
+        central_layout = QVBoxLayout(central)
+        central_layout.setContentsMargins(0, 0, 0, 0)
+        central_layout.setSpacing(0)
+        central_layout.addWidget(self.header_bar)
+        central_layout.addWidget(body, 1)
+        self._window.setCentralWidget(central)
 
         self.status = self._window.statusBar()
         self.status.showMessage("표준 템플릿(명단·위계) 또는 인사 파일을 가져오면 조직도가 자동 생성됩니다.")
@@ -203,50 +202,97 @@ class MainWindow:
         return getattr(self._window, name)
 
     # ── UI 빌더 ────────────────────────────────────────────────────
-    def _rail_button(self, pixmap, text: str, tooltip: str, slot, primary: bool = False):
+    def _rail_button(self, icon_key: str, text: str, tooltip: str, slot, primary: bool = False):
         from PySide6.QtCore import QSize, Qt
         from PySide6.QtWidgets import QToolButton
 
         button = QToolButton()
-        style = self._window.style()
-        button.setIcon(style.standardIcon(pixmap))
-        button.setIconSize(QSize(20, 20))
-        button.setText(text)
+        button.setIcon(make_icon(icon_key, primary=primary))
+        button.setIconSize(QSize(18, 18))
         button.setToolTip(tooltip)
         button.setAccessibleName(tooltip)
-        button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        button.setAutoRaise(True)
-        button.setMinimumHeight(40)
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        if primary:
+            button.setText(text)
+            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        else:
+            # 아이콘 단독 + 툴팁으로 라벨을 대체(정돈된 헤더 툴바).
+            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        button.setMinimumHeight(36)
         button.setProperty("primary", primary)
         button.clicked.connect(slot)
         return button
 
-    def _build_command_rail(self):
-        from PySide6.QtWidgets import QGridLayout, QStyle, QWidget
+    def _tool_separator(self):
+        from PySide6.QtWidgets import QFrame
 
-        sp = QStyle.StandardPixmap
+        sep = QFrame()
+        sep.setObjectName("toolSep")
+        sep.setFrameShape(QFrame.Shape.VLine)
+        return sep
+
+    def _build_header_bar(self):
+        from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
+
+        bar = QWidget()
+        bar.setObjectName("headerBar")
+        bar.setFixedHeight(60)
+        bar.setAccessibleName("주요 작업 헤더")
+        layout = QHBoxLayout(bar)
+        layout.setContentsMargins(20, 0, 16, 0)
+        layout.setSpacing(6)
+
+        mark = QLabel()
+        mark.setObjectName("appMark")
+        title = QLabel("조직도 Studio")
+        title.setObjectName("appTitle")
+        layout.addWidget(mark)
+        layout.addSpacing(8)
+        layout.addWidget(title)
+        layout.addStretch(1)
+
+        # (아이콘키, 라벨, 툴팁, 슬롯, primary), None = 그룹 구분선.
         specs = [
-            (sp.SP_DialogOpenButton, "가져오기", "명단·위계 템플릿 또는 인사 파일을 불러옵니다.", self.import_people_file, True),
-            (sp.SP_FileIcon, "템플릿", "표준 조직도 템플릿(명단·위계) Excel을 생성합니다.", self.save_template, False),
-            (sp.SP_FileDialogDetailedView, "표 편집", "명단을 표로 편집하고 저장하면 조직도에 반영됩니다.", self.toggle_roster, False),
-            (sp.SP_BrowserReload, "일괄 변환", "부서명을 한 번에 치환합니다(예: 인사팀→피플팀).", self.bulk_convert, False),
-            (sp.SP_ArrowBack, "실행취소", "직전의 이동·이름변경·일괄변환을 되돌립니다.", self.undo_last, False),
-            (sp.SP_DialogSaveButton, "PDF", "조직도 전체를 한 페이지 PDF로 저장합니다.", self.export_pdf, False),
-            (sp.SP_DialogSaveButton, "PNG", "조직도 전체를 고해상도 PNG로 저장합니다.", self.export_png, False),
-            (sp.SP_DriveHDIcon, "Excel", "현재 인사 DB를 Excel로 내보냅니다.", self.export_excel, False),
-            (sp.SP_FileDialogContentsView, "전체 보기", "조직도를 화면에 맞춥니다.", self.fit_chart, False),
+            ("import", "가져오기", "명단·위계 템플릿 또는 인사 파일을 불러옵니다.", self.import_people_file, True),
+            ("template", "템플릿", "표준 조직도 템플릿(명단·위계) Excel을 생성합니다.", self.save_template, False),
+            None,
+            ("roster", "표 편집", "명단을 표로 편집하고 저장하면 조직도에 반영됩니다.", self.toggle_roster, False),
+            ("bulk", "일괄 변환", "부서명을 한 번에 치환합니다(예: 인사팀→피플팀).", self.bulk_convert, False),
+            ("undo", "실행취소", "직전의 이동·이름변경·일괄변환을 되돌립니다.", self.undo_last, False),
+            None,
+            ("pdf", "PDF", "조직도 전체를 한 페이지 PDF로 저장합니다.", self.export_pdf, False),
+            ("png", "PNG", "조직도 전체를 고해상도 PNG로 저장합니다.", self.export_png, False),
+            ("excel", "Excel", "현재 인사 DB를 Excel로 내보냅니다.", self.export_excel, False),
+            None,
+            ("fit", "전체 보기", "조직도를 화면에 맞춥니다.", self.fit_chart, False),
         ]
-        rail = QWidget()
-        rail.setAccessibleName("주요 작업 레일")
-        grid = QGridLayout(rail)
-        grid.setContentsMargins(0, 0, 0, 6)
-        grid.setSpacing(6)
         self._rail_buttons = {}
-        for index, (pixmap, text, tooltip, slot, primary) in enumerate(specs):
-            button = self._rail_button(pixmap, text, tooltip, slot, primary)
+        for spec in specs:
+            if spec is None:
+                layout.addWidget(self._tool_separator())
+                continue
+            icon_key, text, tooltip, slot, primary = spec
+            button = self._rail_button(icon_key, text, tooltip, slot, primary)
             self._rail_buttons[text] = button
-            grid.addWidget(button, index // 2, index % 2)
-        return rail
+            layout.addWidget(button)
+        return bar
+
+    def _build_left_panel(self):
+        from PySide6.QtWidgets import QFrame, QLabel, QVBoxLayout
+
+        panel = QFrame()
+        panel.setObjectName("sidePanel")
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        title = QLabel("조직 목록")
+        title.setObjectName("panelTitle")
+        layout.addWidget(title)
+        layout.addWidget(self.search_input)
+        layout.addWidget(self.summary_label)
+        layout.addWidget(self.org_list, 1)
+        return panel
 
     def _build_display_panel(self):
         from PySide6.QtWidgets import QCheckBox, QGridLayout, QGroupBox
@@ -254,6 +300,9 @@ class MainWindow:
         group = QGroupBox("표시 항목")
         group.setAccessibleName("카드 표시 항목 토글")
         grid = QGridLayout(group)
+        grid.setContentsMargins(12, 8, 12, 10)
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(6)
         self.display_checks = {}
         for index, (field, label) in enumerate(DISPLAY_TOGGLES):
             check = QCheckBox(label)
@@ -264,21 +313,113 @@ class MainWindow:
             grid.addWidget(check, index // 2, index % 2)
         return group
 
+    def _build_right_panel(self):
+        from PySide6.QtWidgets import (
+            QFrame,
+            QLabel,
+            QLineEdit,
+            QPushButton,
+            QVBoxLayout,
+        )
+
+        panel = QFrame()
+        panel.setObjectName("sidePanel")
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(14)
+
+        layout.addWidget(self._build_display_panel())
+
+        prop_caption = QLabel("속성")
+        prop_caption.setObjectName("panelCaption")
+        layout.addWidget(prop_caption)
+
+        # 라벨-값 정렬 폼(선택 시 동적으로 행을 채운다).
+        self.prop_container = QFrame()
+        self.prop_layout = QVBoxLayout(self.prop_container)
+        self.prop_layout.setContentsMargins(0, 0, 0, 0)
+        self.prop_layout.setSpacing(8)
+        self.prop_empty = QLabel("조직이나 직원을 선택하면\n상세 정보가 표시됩니다.")
+        self.prop_empty.setObjectName("propEmpty")
+        self.prop_empty.setWordWrap(True)
+        self.prop_empty.setAccessibleName("선택 상세 정보")
+        self.prop_layout.addWidget(self.prop_empty)
+        layout.addWidget(self.prop_container)
+
+        layout.addStretch(1)
+
+        name_caption = QLabel("조직명")
+        name_caption.setObjectName("panelCaption")
+        layout.addWidget(name_caption)
+        self.name_editor = QLineEdit()
+        self.name_editor.setPlaceholderText("선택 항목 이름")
+        self.name_editor.setAccessibleName("조직명 편집")
+        self.name_editor.returnPressed.connect(self.save_selected_org_name)
+        layout.addWidget(self.name_editor)
+        save_name_button = QPushButton("조직명 저장")
+        save_name_button.setProperty("primary", True)
+        save_name_button.setToolTip("선택한 조직의 이름을 저장합니다.")
+        save_name_button.setAccessibleName("조직명 저장")
+        save_name_button.clicked.connect(self.save_selected_org_name)
+        layout.addWidget(save_name_button)
+        return panel
+
+    # ── 속성 폼 갱신 ──────────────────────────────────────────────
+    def _clear_property_rows(self) -> None:
+        while self.prop_layout.count():
+            item = self.prop_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                # 레이아웃에서 빼는 것만으로는 부모 자식 관계·기존 위치가 남아
+                # 새 행 위에 유령처럼 겹쳐 보인다. 부모를 끊어 즉시 제거한다.
+                widget.setParent(None)
+                widget.deleteLater()
+
+    def _set_property_rows(self, heading: str, rows: list[tuple[str, str]]) -> None:
+        from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+
+        self._clear_property_rows()
+        head = QLabel(heading)
+        head.setObjectName("propVal")
+        head.setWordWrap(True)
+        self.prop_layout.addWidget(head)
+        for key, value in rows:
+            if not value:
+                continue
+            row = QWidget()
+            row_layout = QVBoxLayout(row)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(1)
+            key_label = QLabel(key)
+            key_label.setObjectName("propKey")
+            value_label = QLabel(value)
+            value_label.setObjectName("propVal")
+            value_label.setWordWrap(True)
+            row_layout.addWidget(key_label)
+            row_layout.addWidget(value_label)
+            self.prop_layout.addWidget(row)
+
     def _build_roster_editor(self):
         from PySide6.QtWidgets import (
             QAbstractItemView,
+            QFrame,
             QHBoxLayout,
             QLabel,
             QPushButton,
             QTableWidget,
             QVBoxLayout,
-            QWidget,
         )
 
-        container = QWidget()
+        container = QFrame()
+        container.setObjectName("sidePanel")
         layout = QVBoxLayout(container)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
         header = QHBoxLayout()
-        header.addWidget(QLabel("명단 표 편집 — 셀을 수정한 뒤 저장하면 DB와 조직도에 반영됩니다."))
+        header.setSpacing(8)
+        editor_title = QLabel("명단 표 편집 — 셀을 수정한 뒤 저장하면 DB와 조직도에 반영됩니다.")
+        editor_title.setObjectName("panelTitle")
+        header.addWidget(editor_title)
         header.addStretch()
         reload_button = QPushButton("되돌리기")
         reload_button.setToolTip("편집 내용을 버리고 DB에서 다시 불러옵니다.")
@@ -882,16 +1023,14 @@ class MainWindow:
             if len(member_names) > 12:
                 member_summary = f"{member_summary}, 외 {len(member_names) - 12}명"
             self.name_editor.setText(org.name)
-            self.detail_label.setText(
-                "\n".join(
-                    [
-                        f"조직: {org.name}",
-                        f"상위 조직: {parent_name}",
-                        f"직속 구성원: {len(assignments)}명",
-                        f"리더: {leader}",
-                        "구성원: " + member_summary,
-                    ]
-                )
+            self._set_property_rows(
+                org.name,
+                [
+                    ("상위 조직", parent_name),
+                    ("직속 구성원", f"{len(assignments)}명"),
+                    ("리더", leader),
+                    ("구성원", member_summary),
+                ],
             )
 
     def show_employee_details(self, employee_id: str) -> None:
@@ -906,22 +1045,17 @@ class MainWindow:
                 None,
             )
             org_name = assignment.org_unit.name if assignment else "미지정"
-            self.detail_label.setText(
-                "\n".join(
-                    filter(
-                        None,
-                        [
-                            f"직원: {employee.name}",
-                            f"조직: {org_name}",
-                            f"사번: {employee.employee_no}" if employee.employee_no else None,
-                            f"이메일: {employee.email}" if employee.email else None,
-                            f"직급/직책: {' · '.join(filter(None, [employee.grade, employee.title]))}",
-                            f"상태: {employee.status}",
-                            f"입사일: {employee.hire_date}" if employee.hire_date else None,
-                            f"퇴사일: {employee.resign_date}" if employee.resign_date else None,
-                        ],
-                    )
-                )
+            self._set_property_rows(
+                employee.name,
+                [
+                    ("소속", org_name),
+                    ("사번", employee.employee_no or ""),
+                    ("이메일", employee.email or ""),
+                    ("직급/직책", " · ".join(filter(None, [employee.grade, employee.title]))),
+                    ("상태", employee.status or ""),
+                    ("입사일", employee.hire_date or ""),
+                    ("퇴사일", employee.resign_date or ""),
+                ],
             )
 
     def _exit_candidate_options(self, session, employee_ids: list[str]) -> list[tuple[str, str]]:
