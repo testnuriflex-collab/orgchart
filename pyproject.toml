@@ -1,0 +1,35 @@
+[project]
+name = "org-chart-studio"
+version = "0.1.0"
+description = "Offline Python desktop app for HR database and organization chart management."
+readme = "README.md"
+requires-python = ">=3.12,<3.15"
+dependencies = [
+    "PySide6>=6.8",
+    "SQLAlchemy>=2.0",
+    "pandas>=2.2",
+    "openpyxl>=3.1",
+    "alembic>=1.13",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.8",
+    "pyinstaller>=6.0",
+]
+
+[project.scripts]
+org-chart-studio = "app.main:main"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+exclude = ["tests*", "resources*", "packaging*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

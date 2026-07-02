@@ -1,0 +1,16 @@
+﻿사번,이름,이메일,부서,상위부서,직급,직책,입사일,퇴사일,재직상태,근무지,고용형태,매니저사번,스킬,비고
+CEO001,정민서,minseo.jung@example.com,대표이사실,,대표,CEO,2020-03-02,,재직,서울,정규직,,"전략, 투자, 리더십",최상위 조직장
+HR001,박서연,seoyeon.park@example.com,People팀,경영지원본부,책임,팀장,2021-01-11,,재직,서울,정규직,FIN001,"채용, 평가, 노무",조직 개편 담당
+HR002,한지우,jiwoo.han@example.com,People팀,경영지원본부,매니저,HR Operations,2023-04-03,,재직,서울,정규직,HR001,"입퇴사, 온보딩, 문서관리",
+FIN001,최도윤,doyun.choi@example.com,재무회계팀,경영지원본부,이사,경영지원본부장,2020-10-12,,재직,서울,정규직,CEO001,"재무, 예산, 내부통제",본부장 겸 재무 리드
+ENG001,김하준,hajun.kim@example.com,플랫폼개발팀,제품본부,수석,팀장,2021-05-17,,재직,서울,정규직,PROD001,"아키텍처, Python, 데이터",대형 팀 리더
+ENG002,이서준,seojun.lee@example.com,플랫폼개발팀,제품본부,책임,Backend Engineer,2022-09-05,,재직,서울,정규직,ENG001,"API, SQLite, 배포",
+ENG003,오유나,yuna.oh@example.com,프론트엔드팀,제품본부,선임,Frontend Engineer,2023-02-13,,재직,부산,정규직,PROD001,"Qt, UX, 접근성",원격 근무
+ENG004,김민준,minjun.kim.eng@example.com,AI응용팀,제품본부,선임,AI Engineer,2024-08-19,,재직,서울,정규직,PROD001,"LLM, 자동화, 평가",동명이인 검증용
+PROD001,강지훈,jihoon.kang@example.com,프로덕트전략팀,제품본부,상무,제품본부장,2020-08-24,,재직,서울,정규직,CEO001,"로드맵, 지표, 조직설계",
+DSN001,윤아린,arin.yoon@example.com,프로덕트디자인팀,제품본부,선임,Product Designer,2023-11-06,,재직,서울,정규직,PROD001,"디자인시스템, 리서치, 프로토타이핑",Airbnb 톤 검증용
+SALES001,문태오,taeo.moon@example.com,세일즈팀,사업본부,책임,팀장,2022-04-01,,재직,서울,정규직,BIZ001,"B2B 영업, 파이프라인, 협상",
+BIZ001,김민준,minjun.kim.biz@example.com,사업전략팀,사업본부,이사,사업본부장,2021-07-19,,재직,서울,정규직,CEO001,"사업개발, 파트너십, 매출관리",동명이인 검증용
+CS001,배수빈,subin.bae@example.com,고객성공팀,사업본부,매니저,Customer Success Manager,2024-03-04,,재직,부산,정규직,BIZ001,"온보딩, VOC, 리텐션",
+MKT001,임나은,naeun.lim@example.com,브랜드마케팅팀,사업본부,선임,Brand Marketer,2022-01-03,,재직,서울,계약직,BIZ001,"캠페인, 콘텐츠, 브랜딩",고용형태 필터 검증용
+OPS001,장현우,hyunwoo.jang@example.com,운영기획팀,사업본부,매니저,Business Operations,2021-12-06,2026-05-31,퇴사,서울,정규직,BIZ001,"프로세스, 정책, 리포팅",퇴사자 표시 검증용

@@ -1,0 +1,14 @@
+.venv/
+.venv_failed_*/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+*.sqlite3
+*.db
+logs/
+artifacts/
+.DS_Store
