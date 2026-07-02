@@ -655,6 +655,7 @@ class MainWindow:
             self.rename_org_unit,
             self.reparent_org_unit,
             self.display_options,
+            refresh_callback=self.refresh_chart,
         )
         self.current_scene = builder.build(boxes)
         self.current_scene.selectionChanged.connect(self.update_selection_details)

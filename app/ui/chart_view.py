@@ -70,11 +70,14 @@ class ChartSceneBuilder:
         rename_org_callback: Callable[[str, str], None],
         reparent_org_callback: Callable[[str, str | None], None] | None = None,
         display_options: dict[str, bool] | None = None,
+        refresh_callback: Callable[[], None] | None = None,
     ) -> None:
         self.move_employee_callback = move_employee_callback
         self.rename_org_callback = rename_org_callback
         self.reparent_org_callback = reparent_org_callback
         self.display_options = {**DEFAULT_DISPLAY_OPTIONS, **(display_options or {})}
+        # 드롭이 무효(빈 공간 등)일 때 재레이아웃으로 원위치 스냅백하는 콜백.
+        self.refresh_callback = refresh_callback
 
     def build(self, boxes: list[LayoutBox]):
         from PySide6.QtGui import QBrush, QColor, QFont
@@ -83,22 +86,33 @@ class ChartSceneBuilder:
         scene = QGraphicsScene()
         card_items: list[SummaryCardItem | OrgCardItem | EmployeeCardItem | OverflowCardItem] = []
         box_by_id = {box.id: box for box in boxes}
+        items_by_id: dict[str, object] = {}
 
-        self._draw_connectors(scene, boxes, box_by_id)
         for box in boxes:
             if box.kind == "summary":
                 item = SummaryCardItem(box)
                 scene.addItem(item.graphics_item)
             elif box.kind == "org":
-                item = OrgCardItem(box, self.rename_org_callback, self.reparent_org_callback)
+                item = OrgCardItem(
+                    box, self.rename_org_callback, self.reparent_org_callback, self.refresh_callback
+                )
                 scene.addItem(item.graphics_item)
             elif box.kind == "employee":
-                item = EmployeeCardItem(box, self.move_employee_callback, self.display_options)
+                item = EmployeeCardItem(
+                    box, self.move_employee_callback, self.display_options, self.refresh_callback
+                )
                 scene.addItem(item.graphics_item)
             else:
                 item = OverflowCardItem(box)
                 scene.addItem(item.graphics_item)
             card_items.append(item)
+            items_by_id[box.id] = item.graphics_item
+
+        # 연결선을 노드 참조 기반 동적 아이템으로 구성 — 노드가 이동하면
+        # (ItemPositionHasChanged) 컨트롤러가 즉시 재계산·재작도한다(직교 라우팅 유지).
+        connector_controller = OrgConnectorController(scene, boxes, box_by_id, items_by_id)
+        connector_controller.build()
+        scene._org_connector_controller = connector_controller
 
         if not boxes:
             empty = QGraphicsTextItem(
@@ -123,69 +137,152 @@ class ChartSceneBuilder:
         scene._org_chart_card_items = card_items
         return scene
 
-    def _draw_connectors(self, scene, boxes: list[LayoutBox], box_by_id: dict[str, LayoutBox]) -> None:
+class OrgConnectorController:
+    """부모-자식 연결선을 노드 참조 기반 동적 아이템으로 관리한다.
+
+    연결선을 레이아웃 시점 좌표로 한 번만 그리면 카드를 드래그해도 선이 옛 자리에
+    남는다(원인). 이 컨트롤러는 각 부모 그룹당 하나의 QGraphicsPathItem을 두고,
+    노드의 '현재' 위치(레이아웃 좌표 + 아이템 이동량 pos)에서 경로를 다시 계산한다.
+    카드가 이동하면(ItemPositionHasChanged) update()가 호출돼 실시간으로 재작도한다.
+    직교 라우팅(수직 드롭 + 수평 버스/스파인)은 그대로 유지한다.
+    """
+
+    BRANCH_GAP = 36.0        # 부모 아래 수평 버스까지 간격(조직 자식)
+    MEMBER_START_GAP = 14.0  # 부모 아래 멤버 스파인 시작 간격
+    MEMBER_SPINE_INSET = 16.0
+
+    def __init__(self, scene, boxes, box_by_id, items_by_id) -> None:
         from collections import defaultdict
 
-        from PySide6.QtCore import Qt
-        from PySide6.QtGui import QColor, QPen
-
-        line_pen = QPen(QColor(CONNECTOR), 1.0)
-        line_pen.setCosmetic(True)
-        line_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-        line_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-
-        def anchor(box: LayoutBox, key: str, fallback: float) -> float:
-            raw_value = box.meta.get(key)
-            return float(raw_value) if raw_value is not None else fallback
-
-        def add_line(x1: float, y1: float, x2: float, y2: float) -> None:
-            line = scene.addLine(x1, y1, x2, y2, line_pen)
-            line.setZValue(-1)
-
-        org_children: dict[str, list[LayoutBox]] = defaultdict(list)
-        member_children: dict[str, list[LayoutBox]] = defaultdict(list)
+        self.scene = scene
+        self.box_by_id = box_by_id
+        self.items_by_id = items_by_id
+        self._org_children: dict[str, list[str]] = defaultdict(list)
+        self._member_children: dict[str, list[str]] = defaultdict(list)
         for box in boxes:
             if not box.parent_id:
                 continue
             if box.kind == "org":
-                org_children[box.parent_id].append(box)
+                self._org_children[box.parent_id].append(box.id)
             elif box.kind in {"employee", "overflow"}:
-                member_children[box.parent_id].append(box)
+                self._member_children[box.parent_id].append(box.id)
+        self._org_paths: dict[str, object] = {}
+        self._member_paths: dict[str, object] = {}
+        self._pen = None
 
-        for parent_id, children in org_children.items():
-            parent = box_by_id.get(parent_id)
-            if not parent:
+    def _make_pen(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QColor, QPen
+
+        pen = QPen(QColor(CONNECTOR), 1.0)
+        pen.setCosmetic(True)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        return pen
+
+    # ── 노드의 '현재' 기하 (레이아웃 좌표 + 드래그 이동량) ──────────────
+    def _offset(self, node_id: str) -> tuple[float, float]:
+        item = self.items_by_id.get(node_id)
+        if item is None:
+            return (0.0, 0.0)
+        pos = item.pos()
+        return (pos.x(), pos.y())
+
+    def _center_x(self, node_id: str) -> float:
+        box = self.box_by_id[node_id]
+        return box.x + box.width / 2 + self._offset(node_id)[0]
+
+    def _left_x(self, node_id: str) -> float:
+        return self.box_by_id[node_id].x + self._offset(node_id)[0]
+
+    def _top_y(self, node_id: str) -> float:
+        return self.box_by_id[node_id].y + self._offset(node_id)[1]
+
+    def _bottom_y(self, node_id: str) -> float:
+        box = self.box_by_id[node_id]
+        return box.y + box.height + self._offset(node_id)[1]
+
+    def _center_y(self, node_id: str) -> float:
+        box = self.box_by_id[node_id]
+        return box.y + box.height / 2 + self._offset(node_id)[1]
+
+    def build(self) -> None:
+        from PySide6.QtWidgets import QGraphicsPathItem
+
+        self._pen = self._make_pen()
+        for parent_id in self._org_children:
+            if parent_id not in self.box_by_id:
                 continue
-            children.sort(key=lambda item: item.x)
-            parent_center_x = anchor(parent, "connector_bottom_x", parent.x + parent.width / 2)
-            parent_bottom_y = anchor(parent, "connector_bottom_y", parent.y + parent.height)
-            branch_y = min(child.y for child in children) - 36
-            add_line(parent_center_x, parent_bottom_y, parent_center_x, branch_y)
+            item = QGraphicsPathItem()
+            item.setPen(self._pen)
+            item.setZValue(-1)
+            self.scene.addItem(item)
+            self._org_paths[parent_id] = item
+        for parent_id in self._member_children:
+            if parent_id not in self.box_by_id:
+                continue
+            item = QGraphicsPathItem()
+            item.setPen(self._pen)
+            item.setZValue(-1)
+            self.scene.addItem(item)
+            self._member_paths[parent_id] = item
+        self.update()
+
+    def update(self) -> None:
+        """모든 부모 그룹의 연결선 경로를 현재 노드 위치에서 다시 계산한다."""
+        from PySide6.QtGui import QPainterPath
+
+        for parent_id, path_item in self._org_paths.items():
+            children = sorted(self._org_children[parent_id], key=self._center_x)
+            if not children:
+                path_item.setPath(QPainterPath())
+                continue
+            path = QPainterPath()
+            p_cx = self._center_x(parent_id)
+            p_by = self._bottom_y(parent_id)
+            branch_y = min(self._top_y(cid) for cid in children) - self.BRANCH_GAP
+            path.moveTo(p_cx, p_by)
+            path.lineTo(p_cx, branch_y)
             if len(children) > 1:
-                first_x = anchor(children[0], "connector_top_x", children[0].x + children[0].width / 2)
-                last_x = anchor(children[-1], "connector_top_x", children[-1].x + children[-1].width / 2)
-                add_line(first_x, branch_y, last_x, branch_y)
-            for child in children:
-                child_center_x = anchor(child, "connector_top_x", child.x + child.width / 2)
-                child_top_y = anchor(child, "connector_top_y", child.y)
-                add_line(child_center_x, branch_y, child_center_x, child_top_y)
+                path.moveTo(self._center_x(children[0]), branch_y)
+                path.lineTo(self._center_x(children[-1]), branch_y)
+            for cid in children:
+                cx = self._center_x(cid)
+                path.moveTo(cx, branch_y)
+                path.lineTo(cx, self._top_y(cid))
+            path_item.setPath(path)
 
-        for parent_id, members in member_children.items():
-            parent = box_by_id.get(parent_id)
-            if not parent:
+        for parent_id, path_item in self._member_paths.items():
+            members = sorted(self._member_children[parent_id], key=self._top_y)
+            if not members:
+                path_item.setPath(QPainterPath())
                 continue
-            members.sort(key=lambda item: item.y)
-            parent_bottom_y = anchor(parent, "connector_bottom_y", parent.y + parent.height)
-            spine_x = min(member.x for member in members) - 16
-            start_y = parent_bottom_y + 14
-            last_y = members[-1].y + members[-1].height / 2
-            parent_center_x = anchor(parent, "connector_bottom_x", parent.x + parent.width / 2)
-            add_line(parent_center_x, parent_bottom_y, parent_center_x, start_y)
-            add_line(parent_center_x, start_y, spine_x, start_y)
-            add_line(spine_x, start_y, spine_x, last_y)
-            for member in members:
-                member_center_y = member.y + member.height / 2
-                add_line(spine_x, member_center_y, member.x, member_center_y)
+            path = QPainterPath()
+            p_cx = self._center_x(parent_id)
+            p_by = self._bottom_y(parent_id)
+            spine_x = min(self._left_x(mid) for mid in members) - self.MEMBER_SPINE_INSET
+            start_y = p_by + self.MEMBER_START_GAP
+            last_y = self._center_y(members[-1])
+            path.moveTo(p_cx, p_by)
+            path.lineTo(p_cx, start_y)
+            path.moveTo(p_cx, start_y)
+            path.lineTo(spine_x, start_y)
+            path.moveTo(spine_x, start_y)
+            path.lineTo(spine_x, last_y)
+            for mid in members:
+                my = self._center_y(mid)
+                path.moveTo(spine_x, my)
+                path.lineTo(self._left_x(mid), my)
+            path_item.setPath(path)
+
+    def connectors_bounding_rect(self):
+        """모든 연결선 경로의 합집합 경계(검증용)."""
+        from PySide6.QtCore import QRectF
+
+        union = QRectF()
+        for path_item in (*self._org_paths.values(), *self._member_paths.values()):
+            union = union.united(path_item.path().boundingRect())
+        return union
 
 
 def _rounded_rect_item(
@@ -210,6 +307,25 @@ def _rounded_rect_item(
     item.setPen(QPen(QColor(border_color), border_width))
     item.setZValue(-0.2)
     return item
+
+
+_DRAG_THRESHOLD = 6.0  # 클릭과 드래그를 가르는 이동 임계(scene px, manhattan).
+
+
+def _notify_connectors_moved(item) -> None:
+    """이동한 카드가 속한 씬의 연결선 컨트롤러에 재계산을 요청한다."""
+    scene = item.scene()
+    controller = getattr(scene, "_org_connector_controller", None) if scene else None
+    if controller is not None:
+        controller.update()
+
+
+def _was_dragged(item, event) -> bool:
+    """release 시점이 press 대비 임계 이상 이동했는지(=드래그) 판정."""
+    press = getattr(item, "_press_scene_pos", None)
+    if press is None:
+        return False
+    return (event.scenePos() - press).manhattanLength() > _DRAG_THRESHOLD
 
 
 def _prepare_hit_rect(rect) -> None:
@@ -238,18 +354,31 @@ class OrgCardItem:
         box: LayoutBox,
         rename_callback: Callable[[str, str], None],
         reparent_callback: Callable[[str, str | None], None] | None = None,
+        refresh_callback: Callable[[], None] | None = None,
     ) -> None:
         from PySide6.QtGui import QBrush, QColor, QFont, QPen
-        from PySide6.QtWidgets import QGraphicsRectItem, QGraphicsTextItem
+        from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem, QGraphicsTextItem
 
         is_root = box.meta.get("is_root") == "true" and not box.parent_id
         can_reparent = reparent_callback is not None and not is_root
 
         class ReparentableOrgRect(QGraphicsRectItem):
+            def itemChange(inner_self, change, value):  # noqa: N802
+                # 카드가 이동하면 연결된 엣지를 즉시 재계산(드래그 중 실시간 추적).
+                if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
+                    _notify_connectors_moved(inner_self)
+                return QGraphicsRectItem.itemChange(inner_self, change, value)
+
+            def mousePressEvent(inner_self, event):  # noqa: N802
+                inner_self._press_scene_pos = event.scenePos()
+                super().mousePressEvent(event)
+
             def mouseReleaseEvent(inner_self, event):  # noqa: N802
                 super().mouseReleaseEvent(event)
                 if not can_reparent:
                     return
+                if not _was_dragged(inner_self, event):
+                    return  # 단순 클릭(선택)엔 관여하지 않음.
                 scene = inner_self.scene()
                 if scene is None:
                     return
@@ -261,6 +390,9 @@ class OrgCardItem:
                     if target_id and target_id != box.id:
                         reparent_callback(box.id, target_id)
                         return
+                # 유효 타겟 없음(빈 공간 등) → 재레이아웃으로 원위치 스냅백.
+                if refresh_callback is not None:
+                    refresh_callback()
 
         self.group = ReparentableOrgRect(box.x, box.y, box.width, box.height)
         self.group.setData(0, box.id)
@@ -272,6 +404,7 @@ class OrgCardItem:
         self.group.setFlag(QGraphicsRectItem.GraphicsItemFlag.ItemIsSelectable, True)
         if can_reparent:
             self.group.setFlag(QGraphicsRectItem.GraphicsItemFlag.ItemIsMovable, True)
+            self.group.setFlag(QGraphicsRectItem.GraphicsItemFlag.ItemSendsGeometryChanges, True)
 
         # 레벨별 색 구분: 회사=다크, 본부=액센트, 팀=중성.
         if is_root:
@@ -370,17 +503,30 @@ class EmployeeCardItem:
         box: LayoutBox,
         move_callback: Callable[[str, str], None],
         display_options: dict[str, bool] | None = None,
+        refresh_callback: Callable[[], None] | None = None,
     ) -> None:
         from PySide6.QtGui import QBrush, QColor, QFont, QPen
-        from PySide6.QtWidgets import QGraphicsRectItem, QGraphicsTextItem
+        from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem, QGraphicsTextItem
 
         self.box = box
         self.move_callback = move_callback
         options = {**DEFAULT_DISPLAY_OPTIONS, **(display_options or {})}
 
         class MovableEmployeeRect(QGraphicsRectItem):
+            def itemChange(inner_self, change, value):  # noqa: N802
+                # 카드 이동 시 소속 연결선을 실시간 재계산.
+                if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
+                    _notify_connectors_moved(inner_self)
+                return QGraphicsRectItem.itemChange(inner_self, change, value)
+
+            def mousePressEvent(inner_self, event):  # noqa: N802
+                inner_self._press_scene_pos = event.scenePos()
+                super().mousePressEvent(event)
+
             def mouseReleaseEvent(inner_self, event):  # noqa: N802
                 super().mouseReleaseEvent(event)
+                if not _was_dragged(inner_self, event):
+                    return  # 단순 클릭(선택)엔 관여하지 않음.
                 scene = inner_self.scene()
                 if scene is None:
                     return
@@ -391,6 +537,9 @@ class EmployeeCardItem:
                     if candidate.data(1) == "org":
                         move_callback(box.id, candidate.data(0))
                         return
+                # 유효 타겟 없음(빈 공간 등) → 재레이아웃으로 원위치 스냅백.
+                if refresh_callback is not None:
+                    refresh_callback()
 
         self.item = MovableEmployeeRect(box.x, box.y, box.width, box.height)
         self.item.setData(0, box.id)
@@ -399,6 +548,7 @@ class EmployeeCardItem:
         _prepare_hit_rect(self.item)
         self.item.setFlag(QGraphicsRectItem.GraphicsItemFlag.ItemIsSelectable, True)
         self.item.setFlag(QGraphicsRectItem.GraphicsItemFlag.ItemIsMovable, True)
+        self.item.setFlag(QGraphicsRectItem.GraphicsItemFlag.ItemSendsGeometryChanges, True)
         card = _rounded_rect_item(
             self.item,
             box.x,

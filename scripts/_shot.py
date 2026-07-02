@@ -71,7 +71,7 @@ def main() -> int:
     app.processEvents()
     for _ in range(6):
         app.processEvents()
-    if mode in ("main", "empty", "before", "after_final", "zoom"):
+    if mode in ("main", "empty", "before", "after_final", "zoom", "drag"):
         # 리워크판은 reset_view(가독 배율), 원본은 fit_chart로 폴백.
         if hasattr(window, "reset_view"):
             window.reset_view()
@@ -83,6 +83,20 @@ def main() -> int:
         view._user_adjusted = True
         for _ in range(4):
             view.scale(1.15, 1.15)
+    if mode == "drag":
+        # 화면에 보이는 조직 카드(세일즈팀)를 이동시켜 연결선이 실시간으로
+        # 따라오는지(부모→팀, 팀→구성원 정합) 확인.
+        controller = getattr(window.current_scene, "_org_connector_controller", None)
+        if controller is not None:
+            target = None
+            for node_id, gfx in controller.items_by_id.items():
+                box = controller.box_by_id[node_id]
+                movable = bool(gfx.flags() & gfx.GraphicsItemFlag.ItemIsMovable)
+                if box.kind == "org" and movable and box.label == "세일즈팀":
+                    target = gfx
+                    break
+            if target is not None:
+                target.setPos(90, 150)
     app.processEvents()
 
     pixmap = win.grab()
