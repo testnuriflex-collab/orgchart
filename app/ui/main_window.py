@@ -163,6 +163,13 @@ class MainWindow:
         self.chart_view.setRenderHints(self.chart_view.renderHints())
         # 리사이즈·표시 시 가독 배율로 자동 정렬(사용자가 직접 줌하기 전까지).
         self.chart_view.reset_view_callback = self.reset_view
+        # 캔버스 좌상단 고정 오버레이 타이틀(스크롤·축소와 무관, 뷰포트에 고정).
+        self.canvas_title = QLabel("조직도 · 현재 보고 체계", self.chart_view.viewport())
+        self.canvas_title.setObjectName("canvasTitle")
+        self.canvas_title.adjustSize()
+        self.canvas_title.move(16, 12)
+        self.canvas_title.raise_()
+        self.canvas_title.show()
 
         self.center_stack = QStackedWidget()
         self.center_stack.addWidget(self.chart_view)              # index 0: 조직도
@@ -592,6 +599,7 @@ class MainWindow:
             query = self.search_input.text().strip() if hasattr(self, "search_input") else ""
             nodes = filter_nodes_for_query(nodes, query)
             boxes = compute_org_layout(nodes, query)
+            self._layout_boxes = boxes  # reset_view의 카드 경계 스냅에 사용.
             self._mark_search_matches(boxes, query)
             visible_org_ids = {node.id for node in nodes}
             employee_count_by_org = {
@@ -662,36 +670,125 @@ class MainWindow:
             else:
                 self.status.showMessage(f"현재 조직 {len(org_units)}개, 구성원 {total_people}명")
 
+    def _root_center_x(self, boxes, fallback: float) -> float:
+        """루트(회사) 카드의 중심 x. 첫 화면 수평 정렬 기준."""
+        for box in boxes:
+            if box.kind == "summary" or (box.kind == "org" and box.meta.get("is_root") == "true"):
+                return box.x + box.width / 2
+        return fallback
+
+    def _clean_cut_positions(self, boxes) -> list[float]:
+        """카드 내부를 가르지 않는(=카드 사이 '틈'이나 경계에 있는) x 좌표 목록.
+
+        뷰포트 좌우 경계를 이 지점에 맞추면 반쯤 잘린 카드가 생기지 않는다.
+        """
+        eps = 1.0
+        points = {box.x for box in boxes} | {box.x + box.width for box in boxes}
+        return sorted(
+            pos
+            for pos in points
+            if not any(box.x + eps < pos < box.x + box.width - eps for box in boxes)
+        )
+
+    def _best_clean_span(
+        self, cuts: list[float], root_cx: float, vw: float, min_scale: float, max_scale: float
+    ) -> tuple[float, float] | None:
+        """루트를 포함하면서 좌우 끝이 모두 카드 틈에 떨어지는 최적 수평 구간.
+
+        구간 폭에서 배율(vw/폭)이 가독 범위[min_scale, max_scale]에 들도록 하고,
+        그 안에서 가장 넓은(=문맥을 가장 많이 보여주는) 구간을 고른다. 이렇게 고른
+        구간을 뷰포트 폭에 정확히 맞추면 좌우 엣지가 카드 경계와 일치해 잘린 카드가 0개다.
+        """
+        min_span = vw / max_scale
+        max_span = vw / min_scale
+        best: tuple[float, float] | None = None
+        best_score = float("inf")
+        for i in range(len(cuts)):
+            left = cuts[i]
+            if left > root_cx:
+                break
+            for j in range(i + 1, len(cuts)):
+                right = cuts[j]
+                if right < root_cx:
+                    continue
+                span = right - left
+                if span < min_span:
+                    continue
+                if span > max_span:
+                    break  # cuts 정렬됨 → 더 오른쪽은 더 넓어 무효.
+                # 루트를 최대한 화면 중앙에 두되(주), 넓은 구간에 약간의 가점(부).
+                score = abs((left + right) / 2 - root_cx) - 0.05 * span
+                if score < best_score:
+                    best_score = score
+                    best = (left, right)
+        return best
+
     def reset_view(self) -> None:
         """첫 화면·데이터 갱신 시 카드 글자가 읽히는 배율로 조직도를 정렬한다.
 
-        전체 트리를 한 화면에 억지로 욱여넣어 글자가 뭉개지는 것을 막는다.
-        - 전체가 가독 배율 안에 들어오면: 종횡비 유지로 맞추고 중앙 정렬.
-        - 트리가 커서 가독 하한보다 더 축소해야 하면: 하한 배율로 고정하고
-          상단 중앙(루트가 보이는 위치)에 정렬해, 이후 스크롤/줌으로 탐색한다.
+        - 전체 트리가 가독 배율(≥0.72) 안에 들어오면: 그대로 맞추고 상단 정렬.
+        - 트리가 너무 넓으면: 루트를 포함하는 '카드 틈~카드 틈' 구간을 뷰포트에 정확히
+          맞춘다. 좌우 엣지가 카드 경계와 일치해 **반쯤 잘린 카드가 0개**가 되고,
+          배율은 가독 범위 안에서 유지된다.
+        - 수직: 트리 최상단을 뷰포트 상단에서 ~32px 아래에 정렬(상단 대량 공백 제거).
+          트리가 뷰포트보다 짧으면 씬 하단을 넓혀 상단 정렬이 실제로 적용되게 한다.
         """
         if not self.current_scene:
             return
+        from PySide6.QtCore import QRectF
+
         from app.ui.chart_view import INITIAL_MAX_ZOOM, MIN_READABLE_ZOOM
 
         view = self.chart_view
-        rect = self.current_scene.sceneRect()
+        scene = self.current_scene
+        rect = scene.sceneRect()
         if rect.width() <= 0 or rect.height() <= 0:
             return
         viewport = view.viewport().size()
-        if viewport.width() <= 1 or viewport.height() <= 1:
+        vw, vh = float(viewport.width()), float(viewport.height())
+        if vw <= 1 or vh <= 1:
             return
-        fit_scale = min(viewport.width() / rect.width(), viewport.height() / rect.height())
-        scale = max(MIN_READABLE_ZOOM, min(INITIAL_MAX_ZOOM, fit_scale))
+        boxes = list(getattr(self, "_layout_boxes", []) or [])
+        if boxes:
+            content_top = min(box.y for box in boxes)
+            content_left = min(box.x for box in boxes)
+            content_right = max(box.x + box.width for box in boxes)
+        else:
+            content_top, content_left, content_right = rect.top(), rect.left(), rect.right()
+
+        fit_scale = min(vw / rect.width(), vh / rect.height())
+        root_cx = self._root_center_x(boxes, (content_left + content_right) / 2)
+
+        if fit_scale >= MIN_READABLE_ZOOM or not boxes:
+            # 전체가 가독 배율 안에 들어옴.
+            scale = min(INITIAL_MAX_ZOOM, fit_scale)
+            center_sx = (content_left + content_right) / 2
+        else:
+            # 트리가 넓음 → 카드 틈에 정확히 맞는 구간을 골라 잘린 카드 0개로.
+            cuts = self._clean_cut_positions(boxes)
+            span = self._best_clean_span(cuts, root_cx, vw, MIN_READABLE_ZOOM, INITIAL_MAX_ZOOM)
+            if span is not None:
+                left, right = span
+                scale = vw / (right - left)
+                center_sx = (left + right) / 2
+            else:
+                scale = MIN_READABLE_ZOOM
+                center_sx = root_cx
+
         view.resetTransform()
         view.scale(scale, scale)
-        if fit_scale >= scale - 1e-6:
-            # 전체가 화면에 들어옴 → 중앙 정렬.
-            view.centerOn(rect.center())
-        else:
-            # 가독 하한으로 고정(트리가 큼) → 상단 중앙 정렬로 루트부터 보이게.
-            top_y = rect.top() + (viewport.height() / scale) / 2
-            view.centerOn(rect.center().x(), top_y)
+
+        # 수직 상단 정렬: 씬이 뷰포트보다 짧으면 centerOn이 강제로 세로 중앙 배치를
+        # 하므로, 씬 하단을 넓혀 상단 정렬이 먹히게 한다.
+        top_margin = 32.0
+        window_h = vh / scale
+        needed_bottom = content_top - top_margin / scale + window_h + 24
+        if rect.bottom() < needed_bottom:
+            rect = QRectF(rect.left(), rect.top(), rect.width(), needed_bottom - rect.top())
+            scene.setSceneRect(rect)
+        center_sy = content_top + window_h / 2 - top_margin / scale
+
+        view.centerOn(center_sx, center_sy)
 
     def fit_chart(self) -> None:
         """'전체 보기' 버튼: 조직도 전체를 한 화면에 담는다(사용자 명시적 조작)."""

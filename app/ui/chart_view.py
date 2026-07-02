@@ -110,22 +110,11 @@ class ChartSceneBuilder:
             empty.setTextWidth(520)
             empty.setPos(48, 48)
             scene.addItem(empty)
-        else:
-            content_rect = scene.itemsBoundingRect()
-            title = QGraphicsTextItem("조직도")
-            title.setDefaultTextColor(QColor(INK))
-            title.setFont(QFont("Paperlogy", 24, QFont.Weight.Bold))
-            title.setTextWidth(760)
-            title.setPos(content_rect.center().x() - 380, content_rect.top() - 82)
-            scene.addItem(title)
-            subtitle = QGraphicsTextItem("현재 보고 체계")
-            subtitle.setDefaultTextColor(QColor(SUBTLE))
-            subtitle.setFont(QFont("Paperlogy", 10, QFont.Weight.Medium))
-            subtitle.setTextWidth(760)
-            subtitle.setPos(content_rect.center().x() - 380, content_rect.top() - 48)
-            scene.addItem(subtitle)
+        # 캔버스 타이틀은 씬 아이템으로 두면 스크롤·축소에 휩쓸리고 루트 카드와
+        # 시각 충돌한다. 뷰에 고정된 오버레이 라벨(#canvasTitle)로 옮겼다.
 
-        scene.setSceneRect(scene.itemsBoundingRect().adjusted(-96, -88, 96, 96))
+        # 좌우 여백 대칭, 상단은 좁게 두어 첫 화면 상단 공백을 줄인다.
+        scene.setSceneRect(scene.itemsBoundingRect().adjusted(-60, -56, 60, 80))
         scene.setBackgroundBrush(QBrush(QColor(CANVAS)))
         scene._org_chart_card_items = card_items
         return scene

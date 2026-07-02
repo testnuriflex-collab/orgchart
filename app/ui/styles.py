@@ -324,6 +324,17 @@ QGraphicsView {{
     border-radius: {TOKENS['rLg']}px;
 }}
 
+/* 캔버스 좌상단 고정 타이틀(뷰포트 오버레이) */
+#canvasTitle {{
+    background: rgba(255, 255, 255, 0.82);
+    color: {TOKENS['muted']};
+    border: 1px solid {TOKENS['hairline']};
+    border-radius: {TOKENS['rSm']}px;
+    padding: 5px 11px;
+    font-size: 12px;
+    font-weight: 700;
+}}
+
 /* ── 빈 상태 온보딩 ───────────────────────────────────────────────── */
 #emptyStage {{
     background: {TOKENS['canvas']};
