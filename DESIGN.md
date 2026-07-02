@@ -17,11 +17,14 @@
 라인
 - `hairline`: `#E4E7EC` / `hairlineStrong`: `#D3D8DF`
 
-브랜드 액센트(단일 액센트)
-- `accent`: `#A0002A` / `accentHover`: `#B80031` / `accentActive`: `#8A0024` / `accentSoft`: `#FBEDF0`
+브랜드 액센트(단일 액센트 — 프로페셔널 블루, WCAG AA)
+- `accent`: `#1D4ED8` / `accentHover`: `#2563EB` / `accentActive`: `#1B44B8` / `accentSoft`: `#E7EEFD`
 
 상태
-- `success`: `#0F7B45` / `warning`: `#B26A00` / `danger`: `#C0392B`
+- `success`(재직 등 긍정 상태, 블루 통일): `#1D4ED8` / `warning`: `#B26A00` / `danger`: `#C0392B`
+
+조직도 레벨 색
+- 회사(root): 딥 네이비 `#12294A` / 본부(division): 블루 `#1D4ED8` / 팀(team): 슬레이트 `#64748B`
 
 ## 타이포그래피
 
@@ -45,6 +48,8 @@
 ## 컴포넌트
 
 - 아이콘: `qtawesome`(Font Awesome 5 solid) 단일 세트. 미설치 시 Qt 표준 아이콘 폴백.
-- 조직 카드 레벨 색: 회사=다크(`ink`), 본부=액센트 바, 팀=중성 바.
+- 조직 카드 레벨 색: 회사=딥 네이비, 본부=블루 바, 팀=슬레이트 바.
+- 조직도 인터랙션: 마우스 휠(보조키 불필요)로 커서 기준 줌(0.1x~3x), 빈 공간 드래그로 패닝.
+  첫 화면은 가독 배율로 카드 틈에 맞춰 정렬(잘린 카드 0).
 - 입력: 흰 채움, hairlineStrong 1px, 포커스 시 액센트 1.5px.
 - 리스트/표: hover=panelSoft, 선택=accentSoft + accent 텍스트.

@@ -4,7 +4,7 @@ from collections.abc import Callable
 
 from app.chart.layout import LayoutBox
 
-MIN_ZOOM = 0.25
+MIN_ZOOM = 0.1
 MAX_ZOOM = 3.0
 # 첫 화면에서 카드 글자가 읽히도록 강제하는 배율 하한/상한.
 # 넓은 조직은 전체를 한눈에 넣으려다 글자가 뭉개지므로, 가독 하한 아래로는
@@ -21,14 +21,14 @@ HAIRLINE = "#E4E7EC"
 HAIRLINE_STRONG = "#D3D8DF"
 SURFACE = "#FFFFFF"
 SURFACE_SOFT = "#F6F8FA"
-HIGHLIGHT_TINT = "#FBEDF0"
-ACCENT = "#A0002A"
-ACCENT_SOFT = "#FBEDF0"
-SUCCESS = "#0F7B45"
-ROOT = "#1B1F27"          # 회사(최상위) 카드 배경
-DIVISION = "#A0002A"      # 본부(depth 1) 레벨 표시색
-TEAM = "#5A6474"          # 팀(depth 2+) 레벨 표시색
-CONNECTOR = "#C7CDD6"
+HIGHLIGHT_TINT = "#E7EEFD"  # 검색 매치 카드 연한 블루 틴트
+ACCENT = "#1D4ED8"          # 브랜드 블루 (styles.TOKENS['accent']와 정렬)
+ACCENT_SOFT = "#E7EEFD"
+SUCCESS = "#1D4ED8"         # 재직 등 긍정 상태 인디케이터(블루로 통일)
+ROOT = "#12294A"           # 회사(최상위) 카드 배경 — 딥 네이비
+DIVISION = "#1D4ED8"       # 본부(depth 1) 레벨 표시색 — 블루
+TEAM = "#64748B"           # 팀(depth 2+) 레벨 표시색 — 슬레이트(중성·약한 블루)
+CONNECTOR = "#C1CAD8"      # 커넥터 라인 — 뉴트럴 블루그레이
 SHADOW = (17, 22, 33, 46)  # 미세 드롭섀도 RGBA
 
 
@@ -113,8 +113,12 @@ class ChartSceneBuilder:
         # 캔버스 타이틀은 씬 아이템으로 두면 스크롤·축소에 휩쓸리고 루트 카드와
         # 시각 충돌한다. 뷰에 고정된 오버레이 라벨(#canvasTitle)로 옮겼다.
 
-        # 좌우 여백 대칭, 상단은 좁게 두어 첫 화면 상단 공백을 줄인다.
-        scene.setSceneRect(scene.itemsBoundingRect().adjusted(-60, -56, 60, 80))
+        # 씬 rect를 콘텐츠보다 넉넉히 확장해 자유로운 줌·패닝(무한 캔버스 감각)을 준다.
+        # 첫 화면 정렬은 콘텐츠 실제 경계 기준(reset_view)이므로 이 여백에 영향받지 않는다.
+        content = scene.itemsBoundingRect()
+        pad_x = max(1400.0, content.width() * 0.75)
+        pad_y = max(900.0, content.height() * 0.75)
+        scene.setSceneRect(content.adjusted(-pad_x, -pad_y, pad_x, pad_y))
         scene.setBackgroundBrush(QBrush(QColor(CANVAS)))
         scene._org_chart_card_items = card_items
         return scene
@@ -550,13 +554,15 @@ class OrgChartViewMixin:
             self.reset_view_callback()
 
     def wheelEvent(self, event):  # noqa: N802
-        from PySide6.QtCore import Qt
+        # 보조키 없이 휠만으로 커서 기준 줌(AnchorUnderMouse). Ctrl+휠도 동일 동작.
+        # 스크롤이 필요하면 빈 공간 드래그(손바닥 패닝, ScrollHandDrag)로 이동한다.
+        from PySide6.QtWidgets import QGraphicsView
 
-        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-            raw_factor = 1.15 if event.angleDelta().y() > 0 else 0.87
-            factor = clamped_zoom_factor(self.transform().m11(), raw_factor)
-            self.scale(factor, factor)
-            self._user_adjusted = True
-            event.accept()
-            return
-        super().wheelEvent(event)
+        previous_anchor = self.transformationAnchor()
+        self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
+        raw_factor = 1.15 if event.angleDelta().y() > 0 else 0.87
+        factor = clamped_zoom_factor(self.transform().m11(), raw_factor)
+        self.scale(factor, factor)
+        self.setTransformationAnchor(previous_anchor)
+        self._user_adjusted = True
+        event.accept()

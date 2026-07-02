@@ -334,8 +334,8 @@ TEMPLATE_PEOPLE_SHEET = "명단"
 TEMPLATE_HIERARCHY_SHEET = "위계"
 
 
-# 헤더 서식(DESIGN.md accent 계열) 및 컬럼 폭 상수.
-_HEADER_FILL = PatternFill("solid", fgColor="A0002A")
+# 헤더 서식(DESIGN.md accent 계열 = 블루) 및 컬럼 폭 상수.
+_HEADER_FILL = PatternFill("solid", fgColor="1D4ED8")
 _HEADER_FONT = Font(bold=True, color="FFFFFF", size=11)
 _HEADER_ALIGN = Alignment(horizontal="center", vertical="center")
 _PEOPLE_WIDTHS = {

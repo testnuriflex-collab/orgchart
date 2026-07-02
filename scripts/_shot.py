@@ -71,12 +71,18 @@ def main() -> int:
     app.processEvents()
     for _ in range(6):
         app.processEvents()
-    if mode in ("main", "empty", "before", "after_final"):
+    if mode in ("main", "empty", "before", "after_final", "zoom"):
         # 리워크판은 reset_view(가독 배율), 원본은 fit_chart로 폴백.
         if hasattr(window, "reset_view"):
             window.reset_view()
         else:
             window.fit_chart()
+    if mode == "zoom":
+        # 휠 줌 인 상태 시뮬레이션(뷰 중심 확대)으로 인터랙션 감각 확인.
+        view = window.chart_view
+        view._user_adjusted = True
+        for _ in range(4):
+            view.scale(1.15, 1.15)
     app.processEvents()
 
     pixmap = win.grab()

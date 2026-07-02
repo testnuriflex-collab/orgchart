@@ -24,14 +24,14 @@ TOKENS: dict[str, str] = {
     # 라인
     "hairline": "#E4E7EC",
     "hairlineStrong": "#D3D8DF",
-    # 브랜드 액센트
-    "accent": "#A0002A",
-    "accentHover": "#B80031",
-    "accentActive": "#8A0024",
-    "accentSoft": "#FBEDF0",   # 선택/hover 틴트
-    # 상태
-    "success": "#0F7B45",
-    "successSoft": "#E7F3EC",
+    # 브랜드 액센트 (프로페셔널 블루 스케일)
+    "accent": "#1D4ED8",       # blue-700 — 버튼·선택·강조 (흰 텍스트 대비 ~5.5:1, WCAG AA)
+    "accentHover": "#2563EB",  # blue-600
+    "accentActive": "#1B44B8", # blue-800 계열(pressed)
+    "accentSoft": "#E7EEFD",   # 선택/hover 틴트(연한 블루)
+    # 상태 (재직 등 긍정 상태도 블루로 통일)
+    "success": "#1D4ED8",
+    "successSoft": "#E7EEFD",
     "warning": "#B26A00",
     "danger": "#C0392B",
     # 라운드
@@ -326,9 +326,9 @@ QGraphicsView {{
 
 /* 캔버스 좌상단 고정 타이틀(뷰포트 오버레이) */
 #canvasTitle {{
-    background: rgba(255, 255, 255, 0.82);
+    background: rgba(255, 255, 255, 0.96);
     color: {TOKENS['muted']};
-    border: 1px solid {TOKENS['hairline']};
+    border: 1px solid {TOKENS['hairlineStrong']};
     border-radius: {TOKENS['rSm']}px;
     padding: 5px 11px;
     font-size: 12px;

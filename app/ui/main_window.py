@@ -751,12 +751,17 @@ class MainWindow:
         boxes = list(getattr(self, "_layout_boxes", []) or [])
         if boxes:
             content_top = min(box.y for box in boxes)
+            content_bottom = max(box.y + box.height for box in boxes)
             content_left = min(box.x for box in boxes)
             content_right = max(box.x + box.width for box in boxes)
         else:
-            content_top, content_left, content_right = rect.top(), rect.left(), rect.right()
+            content_top, content_bottom = rect.top(), rect.bottom()
+            content_left, content_right = rect.left(), rect.right()
 
-        fit_scale = min(vw / rect.width(), vh / rect.height())
+        # 씬 rect는 패닝 여백까지 포함해 넓으므로, 첫 화면 배율은 콘텐츠 실제 크기 기준.
+        content_w = max(1.0, content_right - content_left)
+        content_h = max(1.0, content_bottom - content_top)
+        fit_scale = min(vw / content_w, vh / content_h)
         root_cx = self._root_center_x(boxes, (content_left + content_right) / 2)
 
         if fit_scale >= MIN_READABLE_ZOOM or not boxes:
@@ -797,7 +802,9 @@ class MainWindow:
         from PySide6.QtCore import Qt
 
         self.chart_view._user_adjusted = True
-        self.chart_view.fitInView(self.current_scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+        # 패닝 여백이 포함된 sceneRect가 아니라 실제 콘텐츠 경계에 맞춘다.
+        content = self.current_scene.itemsBoundingRect().adjusted(-40, -40, 40, 40)
+        self.chart_view.fitInView(content, Qt.AspectRatioMode.KeepAspectRatio)
 
     def _on_display_toggled(self) -> None:
         self.display_options = {field: check.isChecked() for field, check in self.display_checks.items()}
