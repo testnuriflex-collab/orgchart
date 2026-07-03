@@ -321,7 +321,7 @@ QCheckBox::indicator:hover {{
 QCheckBox::indicator:checked {{
     background: {TOKENS['accent']};
     border-color: {TOKENS['accent']};
-    image: url({(resources_dir() / 'icons' / 'check.svg').as_posix()});
+    image: url("{(resources_dir() / 'icons' / 'check.svg').as_posix()}");
 }}
 
 /* 속성 폼 라벨/값 */

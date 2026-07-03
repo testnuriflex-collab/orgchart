@@ -1,0 +1,28 @@
+# 배포 산출물의 플랫폼별 줄바꿈 계약을 git 체크아웃 단계에서 강제한다.
+# (개발자 OS에 의존하지 않고 어떤 플랫폼에서 clone 해도 올바른 EOL 보장)
+
+# 기본: 텍스트 파일은 git이 자동 판별하되, 아래 규칙이 우선한다.
+* text=auto
+
+# Windows에서 실행되는 런처/스크립트는 반드시 CRLF.
+# (cmd.exe는 LF-only .bat에서 라벨/goto/괄호블록 파싱이 깨져 "실행 안 됨" 유발)
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+
+# Unix에서 실행되는 런처/스크립트는 반드시 LF.
+*.command text eol=lf
+*.sh      text eol=lf
+*.py      text eol=lf
+
+# 바이너리(줄바꿈 정규화 금지).
+*.ttf  binary
+*.otf  binary
+*.png  binary
+*.jpg  binary
+*.webp binary
+*.svg  text eol=lf
+*.xlsx binary
+*.xls  binary
+*.sqlite3 binary
+*.db   binary
