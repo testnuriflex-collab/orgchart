@@ -40,12 +40,17 @@ jobs:
         run: python -m PyInstaller packaging/org-chart-studio.spec --noconfirm --clean
 
       - name: 산출물 스모크 확인 (즉시 크래시 여부)
+        # 주의: EXE는 console=False(윈도 서브시스템)로 빌드된다. pwsh의 `& exe` +
+        # $LASTEXITCODE 조합은 콘솔 서브시스템이 아닌 GUI 서브시스템 실행파일에서
+        # 자식 프로세스 종료를 기다리지 않고 먼저 $LASTEXITCODE를 평가해버리는
+        # 레이스가 실제로 재현됨(첫 Windows CI 가동에서 확인) → 반드시 종료를
+        # 명시적으로 기다리는 Start-Process -Wait -PassThru로 종료코드를 받는다.
         shell: pwsh
         run: |
           $env:ORG_CHART_STUDIO_SMOKE = "1"
-          & ".\dist\OrgChartStudio\OrgChartStudio.exe"
-          if ($LASTEXITCODE -ne 0) {
-            throw "OrgChartStudio.exe smoke run exited with code $LASTEXITCODE"
+          $proc = Start-Process -FilePath ".\dist\OrgChartStudio\OrgChartStudio.exe" -Wait -PassThru -NoNewWindow
+          if ($proc.ExitCode -ne 0) {
+            throw "OrgChartStudio.exe smoke run exited with code $($proc.ExitCode)"
           }
 
       - name: 실행파일 아티팩트 업로드
