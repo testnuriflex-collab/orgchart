@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import shutil
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+from alembic.util import CommandError
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.schema import CreateColumn
@@ -32,7 +35,32 @@ def initialize_database(session_factory: sessionmaker[Session]) -> None:
         command.stamp(config, "head")
         return
 
-    command.upgrade(config, "head")
+    try:
+        command.upgrade(config, "head")
+    except CommandError:
+        # 이 빌드가 모르는 버전 도장이 찍힌 DB(다른 배포본이 생성). 사용자 PC의
+        # ~/.org_chart_studio/hr.sqlite3 는 앱 재설치와 무관하게 남으므로 여기서
+        # 죽으면 사용자는 영영 실행할 수 없다 — 원본을 백업한 뒤 데이터를 보존한
+        # 채 현재 스키마로 재정렬하고 도장을 현재 버전으로 다시 찍는다.
+        _backup_database_file(engine)
+        Base.metadata.create_all(engine)
+        _repair_existing_schema(engine)
+        command.stamp(config, "head", purge=True)
+
+
+def _backup_database_file(engine: object) -> None:
+    database = getattr(engine.url, "database", None)
+    if not database:
+        return
+    source = Path(database)
+    if not source.exists():
+        return
+    backup = source.with_name(f"{source.stem}.backup-{datetime.now():%Y%m%d-%H%M%S}{source.suffix}")
+    try:
+        shutil.copy2(source, backup)
+    except OSError:
+        # 백업 실패(권한·디스크 부족 등)가 복구 자체를 막아서는 안 된다.
+        pass
 
 
 def _alembic_config(database_url: str) -> Config:

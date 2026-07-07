@@ -79,6 +79,36 @@ def test_missing_import_rows_require_explicit_exit_candidate_approval(tmp_path) 
         assert employee.status == EmploymentStatus.EXIT_CANDIDATE.value
 
 
+def test_initialize_database_recovers_database_stamped_by_unknown_release(tmp_path) -> None:
+    # 시나리오: 다른(구/신) 배포본이 만든 hr.sqlite3에 이 빌드가 모르는 버전 도장
+    # (예: 20260706_0004)이 찍혀 있음 — 실제 고객 PC에서 기동 크래시로 재현된 사례.
+    database_path = tmp_path / "hr.sqlite3"
+    session_factory = create_session_factory(database_path)
+    initialize_database(session_factory)
+
+    with session_factory() as session:
+        HrRepository(session).create_or_update_employee(
+            EmployeeInput(employee_no="A001", name="홍길동", department="인사팀")
+        )
+        session.commit()
+
+    engine = session_factory.kw["bind"]
+    with engine.begin() as connection:
+        connection.execute(text("update alembic_version set version_num = '20260706_0004'"))
+
+    initialize_database(session_factory)
+
+    with engine.connect() as connection:
+        version = connection.execute(text("select version_num from alembic_version")).scalar_one()
+    assert version == "20260605_0001"
+
+    with session_factory() as session:
+        employees = HrRepository(session).list_employees()
+        assert [(employee.employee_no, employee.name) for employee in employees] == [("A001", "홍길동")]
+
+    assert list(tmp_path.glob("hr.backup-*.sqlite3")), "복구 전 원본 DB 백업 파일이 있어야 함"
+
+
 def test_initialize_database_stamps_existing_unversioned_database(tmp_path) -> None:
     database_path = tmp_path / "legacy.sqlite3"
     engine = create_engine(f"sqlite:///{database_path}", future=True)
