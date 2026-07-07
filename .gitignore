@@ -18,6 +18,6 @@ artifacts/
 # 실제 배포 시에는 폴더째로 복사해 전달하거나, 아래 산출물을 로컬/CI 빌드로 채운 뒤
 # 그 폴더(디렉터리)만 buyer에게 전달한다 — README/템플릿 등 경량 파일은 계속 추적한다.
 /*.app/
-/OrgChartStudio/
+/START-Windows/
 결과물(Output)/mac/*.app/
-결과물(Output)/windows/OrgChartStudio/
+결과물(Output)/windows/START-Windows/

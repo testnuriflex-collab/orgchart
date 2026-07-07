@@ -9,7 +9,7 @@
 ## Python 설치 없이 실행 (권장 — 완전 독립 실행파일)
 
 최상위 디렉터리의 `OrgChartStudio.app` (macOS) 또는
-`OrgChartStudio/OrgChartStudio.exe` (Windows)를
+`START-Windows/OrgChartStudio.exe` (Windows)를
 더블클릭하면 됩니다. Python·pip·가상환경 설치가 전혀 필요 없습니다.
 빌드 방법은 이 폴더의 `packaging/org-chart-studio.spec`을 참고하세요.
 
@@ -120,7 +120,7 @@ python -m PyInstaller packaging/org-chart-studio.spec --noconfirm --clean
 ```
 
 결과: `dist/OrgChartStudio.app` (더블클릭 실행되는 macOS 앱 번들, 아이콘·버전
-메타데이터 포함)과 `dist/OrgChartStudio/`(원본 폴더 배포판) 두 가지가 생성된다.
+메타데이터 포함)과 `dist/START-Windows/`(Windows 폴더 배포판) 두 가지가 생성된다.
 빌드 후 `open dist/OrgChartStudio.app`으로 실제 기동을 확인한다.
 
 ### Windows (GitHub Actions로 자동 빌드)

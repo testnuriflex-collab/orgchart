@@ -9,7 +9,7 @@
 | 운영체제 | 실행 파일 |
 | --- | --- |
 | macOS | `OrgChartStudio.app` 더블클릭 |
-| Windows | `OrgChartStudio/` 폴더 내 `OrgChartStudio.exe` 더블클릭 |
+| Windows | `START-Windows/` 폴더 내 `OrgChartStudio.exe` 더블클릭 |
 
 - macOS에서 "확인되지 않은 개발자" 경고가 뜨면 앱을 마우스 오른쪽 클릭 → **열기**를
   한 번 선택하면 이후에는 바로 실행됩니다(Apple 유료 공증 인증서가 아직 없어 발생하는

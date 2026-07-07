@@ -48,7 +48,7 @@ jobs:
         shell: pwsh
         run: |
           $env:ORG_CHART_STUDIO_SMOKE = "1"
-          $proc = Start-Process -FilePath ".\dist\OrgChartStudio\OrgChartStudio.exe" -Wait -PassThru -NoNewWindow
+          $proc = Start-Process -FilePath ".\dist\START-Windows\OrgChartStudio.exe" -Wait -PassThru -NoNewWindow
           if ($proc.ExitCode -ne 0) {
             throw "OrgChartStudio.exe smoke run exited with code $($proc.ExitCode)"
           }
@@ -57,6 +57,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: OrgChartStudio-windows
-          path: dev/dist/OrgChartStudio/
+          path: dev/dist/START-Windows/
           if-no-files-found: error
           retention-days: 30
