@@ -35,7 +35,7 @@ if not exist ".venv\Scripts\python.exe" (
 )
 if not exist ".venv\.deps_installed" (
     echo [준비 2/2] 필요한 구성요소를 내려받아 설치하는 중입니다. 수 분 걸릴 수 있습니다...
-    ".venv\Scripts\python.exe" -m pip install --upgrade pip
+    ".venv\Scripts\python.exe" -m pip install --upgrade pip setuptools wheel
     if errorlevel 1 goto :fail
     ".venv\Scripts\python.exe" -m pip install -e .
     if errorlevel 1 goto :fail

@@ -5,6 +5,10 @@ import stat
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# .gitattributes는 git 저장소 실제 루트(실행관리(Ops-Run)의 한 단계 위)에 있어야
+# repo 전체에 EOL 규칙이 적용된다 — 판매구조 정리로 소스가 실행관리(Ops-Run)/ 밑으로
+# 이동했지만 .gitattributes/.git/.github는 tooling 요구사항상 true root에 남긴다.
+GIT_ROOT = ROOT.parent
 
 
 def test_windows_launcher_exists_and_bootstraps() -> None:
@@ -60,9 +64,40 @@ def test_mac_command_uses_lf_line_endings() -> None:
 
 def test_gitattributes_enforces_launcher_eol() -> None:
     """회귀: .gitattributes가 없으면 체크아웃 시 EOL 정규화가 안 돼 재발한다."""
-    text = (ROOT / ".gitattributes").read_text(encoding="utf-8")
+    text = (GIT_ROOT / ".gitattributes").read_text(encoding="utf-8")
     assert "*.bat" in text and "eol=crlf" in text
     assert "*.command" in text and "eol=lf" in text
+
+
+def test_pyproject_declares_build_system() -> None:
+    """회귀: [build-system] 미선언 + pyproject-only(no setup.py) 프로젝트는
+    fresh Windows에서 `pip install -e .`가 pip의 암묵적 기본 백엔드에 의존해
+    비결정적으로 실패할 수 있다 → 런처가 :fail로 빠져 "실행 안 됨".
+
+    Root cause: 빌드 백엔드 미선언. Python 3.12+ venv는 setuptools를 기본
+    포함하지 않으므로 PEP 660 editable 빌드가 취약해진다.
+    Fixed in: pyproject.toml [build-system] 명시(setuptools>=64, build_meta).
+    """
+    import tomllib
+
+    with open(ROOT / "pyproject.toml", "rb") as f:
+        data = tomllib.load(f)
+    bs = data.get("build-system")
+    assert bs is not None, "[build-system] 테이블이 있어야 한다"
+    assert bs.get("build-backend") == "setuptools.build_meta"
+    requires = " ".join(bs.get("requires", []))
+    assert "setuptools>=64" in requires  # PEP 660 build_editable 지원 최소 버전
+
+
+def test_launchers_upgrade_setuptools_for_editable_install() -> None:
+    """회귀: editable 설치는 setuptools>=64가 필요한데 Python 3.12 venv는
+    setuptools를 기본 포함하지 않는다. 런처가 pip만 올리고 setuptools/wheel을
+    누락하면 편차 있는 부트스트랩에서 설치가 깨질 수 있다."""
+    for name in ("run_windows.bat", "run_mac.command"):
+        text = (ROOT / name).read_text(encoding="utf-8")
+        assert "pip install --upgrade pip setuptools wheel" in text, (
+            f"{name}: 최초 부트스트랩에서 pip와 함께 setuptools·wheel도 올려야 한다"
+        )
 
 
 def test_qss_check_icon_url_is_quoted_forward_slash() -> None:

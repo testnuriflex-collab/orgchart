@@ -38,7 +38,7 @@ if [ ! -x ".venv/bin/python" ]; then
 fi
 if [ ! -f ".venv/.deps_installed" ]; then
     echo "[준비 2/2] 필요한 구성요소를 내려받아 설치하는 중입니다. 수 분 걸릴 수 있습니다..."
-    ".venv/bin/python" -m pip install --upgrade pip || { echo "[오류] 준비 단계에서 문제가 발생했습니다."; pause_and_exit 1; }
+    ".venv/bin/python" -m pip install --upgrade pip setuptools wheel || { echo "[오류] 준비 단계에서 문제가 발생했습니다."; pause_and_exit 1; }
     ".venv/bin/python" -m pip install -e . || { echo "[오류] 구성요소 설치에 실패했습니다. 인터넷 연결을 확인하세요."; pause_and_exit 1; }
     echo "installed" > ".venv/.deps_installed"
 fi

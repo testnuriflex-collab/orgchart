@@ -1,3 +1,12 @@
+# Build backend must be declared explicitly. Python 3.12+ venv no longer bundles
+# setuptools, and pip's implicit default backend for a pyproject-only project
+# (no setup.py) is fragile across pip/setuptools versions — an editable
+# `pip install -e .` can then fail on a fresh Windows machine. Pinning the
+# backend makes the launcher's install step deterministic offline-of-cache too.
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "org-chart-studio"
 version = "0.1.0"

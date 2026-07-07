@@ -12,3 +12,10 @@ dist/
 logs/
 artifacts/
 .DS_Store
+
+# 결과물(Output)의 실행 바이너리는 PyInstaller로 재생성 가능한 산출물이라
+# git 저장소에는 올리지 않는다(수백MB 바이너리로 repo가 비대해짐 방지).
+# 실제 배포 시에는 폴더째로 복사해 전달하거나, 아래 산출물을 로컬/CI 빌드로 채운 뒤
+# 그 폴더(디렉터리)만 buyer에게 전달한다 — README/템플릿 등 경량 파일은 계속 추적한다.
+결과물(Output)/mac/*.app/
+결과물(Output)/windows/OrgChartStudio/
