@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import stat
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,10 +23,14 @@ def test_windows_launcher_exists_and_bootstraps() -> None:
 
 
 def test_mac_launcher_exists_executable_and_bootstraps() -> None:
+    """회귀: Windows 러너(NTFS)에서 git checkout하면 Unix 실행 권한 비트(x-bit) 자체가
+    파일시스템에 존재하지 않아 항상 실패한다(Windows CI 최초 도입 시 실제로 재현됨).
+    macOS/Linux에서만 의미 있는 소유자 실행 권한이므로 그 플랫폼에서만 검증한다."""
     launcher = ROOT / "run_mac.command"
     assert launcher.exists()
-    mode = launcher.stat().st_mode
-    assert mode & stat.S_IXUSR  # 더블클릭 실행을 위한 실행 권한
+    if sys.platform != "win32":
+        mode = launcher.stat().st_mode
+        assert mode & stat.S_IXUSR  # 더블클릭 실행을 위한 실행 권한
     text = launcher.read_text(encoding="utf-8")
     assert "python.org" in text
     assert "venv" in text
