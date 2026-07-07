@@ -22,7 +22,7 @@ from app.ui.styles import load_paperlogy  # noqa: E402
 def main() -> int:
     app = QApplication.instance() or QApplication([])
     load_paperlogy(app)
-    sample_path = Path("sample_inputs/인사정보_샘플.json")
+    sample_path = Path("sample_inputs/sample_hr_info.json")
     output_path = Path("artifacts/org_chart_sample.png")
     output_path.parent.mkdir(parents=True, exist_ok=True)
 

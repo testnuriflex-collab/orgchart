@@ -26,7 +26,7 @@ from app.db.repository import HrRepository  # noqa: E402
 
 
 def load_sample(session_factory) -> None:
-    sample = ROOT / "sample_inputs" / "인사정보_샘플.csv"
+    sample = ROOT / "sample_inputs" / "sample_hr_info.csv"
     with session_factory() as session:
         importer = PeopleFileImporter(session)
         preview = importer.preview(sample)

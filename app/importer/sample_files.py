@@ -272,9 +272,9 @@ def write_sample_input_files(target_dir: Path) -> list[Path]:
     target_dir.mkdir(parents=True, exist_ok=True)
     frame = pd.DataFrame(SAMPLE_ROWS)
     paths = [
-        target_dir / "인사정보_샘플.xlsx",
-        target_dir / "인사정보_샘플.csv",
-        target_dir / "인사정보_샘플.json",
+        target_dir / "sample_hr_info.xlsx",
+        target_dir / "sample_hr_info.csv",
+        target_dir / "sample_hr_info.json",
     ]
     frame.to_excel(paths[0], index=False)
     frame.to_csv(paths[1], index=False, encoding="utf-8-sig")

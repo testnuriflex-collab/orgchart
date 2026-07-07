@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_windows_launcher_exists_and_bootstraps() -> None:
-    launcher = ROOT / "실행_Windows.bat"
+    launcher = ROOT / "run_windows.bat"
     assert launcher.exists()
     text = launcher.read_text(encoding="utf-8")
     assert "python.org" in text  # 파이썬 미설치 안내
@@ -18,7 +18,7 @@ def test_windows_launcher_exists_and_bootstraps() -> None:
 
 
 def test_mac_launcher_exists_executable_and_bootstraps() -> None:
-    launcher = ROOT / "실행_Mac.command"
+    launcher = ROOT / "run_mac.command"
     assert launcher.exists()
     mode = launcher.stat().st_mode
     assert mode & stat.S_IXUSR  # 더블클릭 실행을 위한 실행 권한
@@ -31,7 +31,7 @@ def test_mac_launcher_exists_executable_and_bootstraps() -> None:
 
 def test_launchers_use_relative_paths_not_absolute() -> None:
     # 사용자가 폴더를 옮겨도 동작하도록 개발 머신 절대경로가 박혀 있으면 안 된다.
-    for name in ("실행_Windows.bat", "실행_Mac.command"):
+    for name in ("run_windows.bat", "run_mac.command"):
         text = (ROOT / name).read_text(encoding="utf-8")
         assert "/Users/" not in text
         assert "C:\\Users" not in text
@@ -43,9 +43,9 @@ def test_windows_bat_uses_crlf_line_endings() -> None:
     Bug was: LF-only .bat를 macOS에서 커밋 → Windows cmd.exe가 라벨(:fail)·goto·
              괄호 if 블록 파싱에 실패해 "실행 안 됨".
     Root cause: 배치 파일 줄바꿈이 CRLF가 아니라 LF.
-    Fixed in: 실행_Windows.bat(CRLF 변환) + .gitattributes(eol=crlf 강제).
+    Fixed in: run_windows.bat(CRLF 변환) + .gitattributes(eol=crlf 강제).
     """
-    raw = (ROOT / "실행_Windows.bat").read_bytes()
+    raw = (ROOT / "run_windows.bat").read_bytes()
     assert b"\n" in raw, "빈 파일이 아니어야 한다"
     # 모든 LF는 CR을 앞세워야 한다(=CRLF). 홑 LF가 하나라도 있으면 실패.
     assert raw.replace(b"\r\n", b"").count(b"\n") == 0, "홑 LF(\\n)가 없어야 한다 — CRLF 필요"
@@ -54,7 +54,7 @@ def test_windows_bat_uses_crlf_line_endings() -> None:
 
 def test_mac_command_uses_lf_line_endings() -> None:
     """회귀: Unix용 .command는 CRLF가 섞이면 셸이 깨지므로 LF-only여야 한다."""
-    raw = (ROOT / "실행_Mac.command").read_bytes()
+    raw = (ROOT / "run_mac.command").read_bytes()
     assert b"\r" not in raw, "Unix 런처에 CR(\\r)이 있으면 안 된다"
 
 
