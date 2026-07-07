@@ -1,15 +1,15 @@
-# 조직도 Studio — 개발자용 문서 (실행관리(Ops-Run))
+# 조직도 Studio — 개발자용 문서 (dev)
 
 > 최종 사용자(구매자)용 실행 안내는 저장소 최상위 `README.md`와
-> `결과물(Output)/` 폴더를 참고하세요. 이 문서는 소스 코드로 직접 실행·개발·
+> `Output/` 폴더를 참고하세요. 이 문서는 소스 코드로 직접 실행·개발·
 > 재패키징하려는 개발자를 위한 것입니다.
 
 인사정보 파일을 로컬 SQLite 데이터베이스로 통합하고, 자동 조직도 GUI에서 발령/입사/퇴사/조직명 변경을 관리하는 Python 데스크톱 앱입니다.
 
 ## Python 설치 없이 실행 (권장 — 완전 독립 실행파일)
 
-`결과물(Output)/mac/OrgChartStudio.app` (macOS) 또는
-`결과물(Output)/windows/OrgChartStudio/OrgChartStudio.exe` (Windows, CI 빌드 산출물)를
+최상위 디렉터리의 `OrgChartStudio.app` (macOS) 또는
+`OrgChartStudio/OrgChartStudio.exe` (Windows)를
 더블클릭하면 됩니다. Python·pip·가상환경 설치가 전혀 필요 없습니다.
 빌드 방법은 이 폴더의 `packaging/org-chart-studio.spec`을 참고하세요.
 
@@ -113,7 +113,7 @@ CI 빌드를 분리했다.
 ### macOS (로컬에서 직접 빌드)
 
 ```bash
-cd "실행관리(Ops-Run)"
+cd "dev"
 source .venv/bin/activate
 python -m pip install -e ".[dev]"
 python -m PyInstaller packaging/org-chart-studio.spec --noconfirm --clean

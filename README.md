@@ -8,8 +8,8 @@
 
 | 운영체제 | 실행 파일 |
 | --- | --- |
-| macOS | `결과물(Output)/mac/OrgChartStudio.app` 더블클릭 |
-| Windows | `결과물(Output)/windows/OrgChartStudio/OrgChartStudio.exe` 더블클릭 |
+| macOS | `OrgChartStudio.app` 더블클릭 |
+| Windows | `OrgChartStudio/` 폴더 내 `OrgChartStudio.exe` 더블클릭 |
 
 - macOS에서 "확인되지 않은 개발자" 경고가 뜨면 앱을 마우스 오른쪽 클릭 → **열기**를
   한 번 선택하면 이후에는 바로 실행됩니다(Apple 유료 공증 인증서가 아직 없어 발생하는
@@ -18,7 +18,7 @@
 
 ## 샘플 양식으로 시작하기
 
-`결과물(Output)/샘플양식(Templates)/` 폴더에 있는 엑셀 파일을 앱에서 열어 바로
+`Output/Templates/` 또는 최상위 폴더에 있는 엑셀 파일을 앱에서 열어 바로
 조직도를 그려볼 수 있습니다.
 
 - `조직도_표준템플릿.xlsx`: 명단 + 위계 2개 시트로 구성된 정식 양식(헤더 서식·드롭다운 포함)
@@ -27,10 +27,10 @@
 
 ## 폴더 구조
 
-- `결과물(Output)/`: 실제로 실행·배포하는 산출물(이 폴더만 있으면 앱을 쓸 수 있습니다)
-- `실행관리(Ops-Run)/`: 소스 코드·테스트·빌드 스크립트 등 개발용 자료
+- `Output/`: 실제로 실행·배포하는 산출물(이 폴더만 있으면 앱을 쓸 수 있습니다)
+- `dev/`: 소스 코드·테스트·빌드 스크립트 등 개발용 자료
   (일반 사용자는 열어볼 필요가 없습니다. 개발 문서는
-  `실행관리(Ops-Run)/README-dev.md` 참고)
+  `dev/README-dev.md` 참고)
 
 ## 문의 시 참고 정보
 

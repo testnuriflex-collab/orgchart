@@ -9,7 +9,7 @@ on:
   push:
     branches: [master, main]
     paths:
-      - "실행관리(Ops-Run)/**"
+      - "dev/**"
       - ".github/workflows/build-windows.yml"
   workflow_dispatch: {}
 
@@ -18,7 +18,7 @@ jobs:
     runs-on: windows-latest
     defaults:
       run:
-        working-directory: 실행관리(Ops-Run)
+        working-directory: dev
     steps:
       - name: 저장소 체크아웃
         uses: actions/checkout@v4
@@ -57,6 +57,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: OrgChartStudio-windows
-          path: 실행관리(Ops-Run)/dist/OrgChartStudio/
+          path: dev/dist/OrgChartStudio/
           if-no-files-found: error
           retention-days: 30

@@ -6,8 +6,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-# .gitattributes는 git 저장소 실제 루트(실행관리(Ops-Run)의 한 단계 위)에 있어야
-# repo 전체에 EOL 규칙이 적용된다 — 판매구조 정리로 소스가 실행관리(Ops-Run)/ 밑으로
+# .gitattributes는 git 저장소 실제 루트(dev의 한 단계 위)에 있어야
+# repo 전체에 EOL 규칙이 적용된다 — 판매구조 정리로 소스가 dev/ 밑으로
 # 이동했지만 .gitattributes/.git/.github는 tooling 요구사항상 true root에 남긴다.
 GIT_ROOT = ROOT.parent
 
