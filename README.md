@@ -6,10 +6,16 @@
 
 ## 실행 방법
 
+> ⚠️ **Windows 사용자는 zip 압축을 먼저 전부 풀어야 합니다.**
+> zip 파일을 더블클릭해서 "열기"만 한 상태(진짜 폴더처럼 보임)에서 exe를 실행하면
+> `Failed to load Python DLL ... python312.dll` 오류가 납니다.
+> zip 파일 **오른쪽 클릭 → "압축 풀기(모두 추출)" → 바탕 화면**에 푼 뒤 실행하세요.
+> 자세한 확인 방법은 동봉된 `[필독] 실행이 안 될 때 - 압축을 먼저 푸세요.txt` 참고.
+
 | 운영체제 | 실행 파일 |
 | --- | --- |
 | macOS | `start_mac/OrgChartStudio.app` 더블클릭 |
-| Windows | `start_windows/` 폴더 내 `OrgChartStudio.exe` 더블클릭 |
+| Windows | 압축을 모두 푼 뒤 `start_windows/` 폴더 내 `OrgChartStudio.exe` 더블클릭 (`_internal` 폴더와 반드시 같은 위치에 있어야 함) |
 
 - macOS에서 "확인되지 않은 개발자" 경고가 뜨면 앱을 마우스 오른쪽 클릭 → **열기**를
   한 번 선택하면 이후에는 바로 실행됩니다(Apple 유료 공증 인증서가 아직 없어 발생하는
