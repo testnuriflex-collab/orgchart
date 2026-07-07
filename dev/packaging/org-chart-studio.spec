@@ -66,7 +66,8 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name="START-Windows" if sys.platform.startswith("win") else "OrgChartStudio",
+    # 최상위 배포 폴더명(start_windows)과 CI 워크플로우의 dist 경로가 이 이름에 묶여 있다.
+    name="start_windows" if sys.platform.startswith("win") else "OrgChartStudio",
 )
 
 # macOS 전용 .app 번들 — Windows 등 다른 OS에서는 PyInstaller가 자동으로 건너뛴다.
